@@ -1,21 +1,24 @@
 import streamlit as st
 from openai import OpenAI
-import os
 
 # ==============================
-# Setup
+# App Title
 # ==============================
 st.title("🤖 Simple AI Chatbot")
 
-# Load API key securely
-openai_api_key = st.secrets.get("OPENAI_API_KEY", None)
+# ==============================
+# Load OpenAI API Key from Secrets
+# ==============================
+openai_api_key = st.secrets.get("OPENAI_API_KEY")
 if not openai_api_key:
-    st.error("Please add your OpenAI API key in Streamlit secrets!")
+    st.error("❌ Please add your OpenAI API key in Streamlit Secrets!")
     st.stop()
 
 client = OpenAI(api_key=openai_api_key)
 
+# ==============================
 # Initialize chat history
+# ==============================
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -25,14 +28,14 @@ if "messages" not in st.session_state:
 user_input = st.text_input("Ask me anything:")
 
 if st.button("Send"):
-    if user_input:
+    if user_input.strip() != "":
         # Save user message
         st.session_state.messages.append({"role": "user", "content": user_input})
 
         # Get response from OpenAI
         try:
             response = client.chat.completions.create(
-                model="gpt-4.1-mini",  # lightweight model
+                model="gpt-4.1-mini",  # lightweight model for Streamlit
                 messages=st.session_state.messages
             )
             bot_reply = response.choices[0].message.content
@@ -45,9 +48,16 @@ if st.button("Send"):
 # ==============================
 # Display chat history
 # ==============================
-st.subheader("Chat History")
+st.subheader("💬 Chat History")
 for msg in st.session_state.messages:
     if msg["role"] == "user":
         st.markdown(f"**You:** {msg['content']}")
     else:
         st.markdown(f"**Bot:** {msg['content']}")
+
+# ==============================
+# Optional: Clear chat button
+# ==============================
+if st.button("Clear Chat"):
+    st.session_state.messages = []
+    st.experimental_rerun()
