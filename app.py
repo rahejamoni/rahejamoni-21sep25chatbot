@@ -4,16 +4,32 @@ import pickle
 import numpy as np
 import pandas as pd
 import streamlit as st
-from openai import OpenAI
+from openai import OpenAI, OpenAIError
 
 # =========================
-# STREAMLIT SECRETS (must be set in Streamlit Cloud)
+# STREAMLIT SECRETS (required)
 # =========================
-OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-EXCEL_QA_PATH = st.secrets["EXCEL_QA_PATH"]
-EXCEL_LAN_PATH = st.secrets["EXCEL_LAN_PATH"]
+# Set these in Streamlit Cloud -> Settings -> Secrets
+# OPENAI_API_KEY, EXCEL_QA_PATH, EXCEL_LAN_PATH
+OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY")
+EXCEL_QA_PATH = st.secrets.get("EXCEL_QA_PATH")
+EXCEL_LAN_PATH = st.secrets.get("EXCEL_LAN_PATH")
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+if not OPENAI_API_KEY:
+    st.error("OPENAI_API_KEY missing in Streamlit Secrets.")
+    st.stop()
+if not EXCEL_QA_PATH or not EXCEL_LAN_PATH:
+    st.error("EXCEL_QA_PATH or EXCEL_LAN_PATH missing in Streamlit Secrets.")
+    st.stop()
+
+# =========================
+# OPENAI CLIENT
+# =========================
+try:
+    client = OpenAI(api_key=OPENAI_API_KEY)
+except Exception as e:
+    st.error(f"Failed to initialize OpenAI client: {e}")
+    st.stop()
 
 # =========================
 # CONFIG
@@ -26,12 +42,34 @@ TOP_K = 5
 # =========================
 # UTILITIES
 # =========================
-def cosine(a, b):
+def cosine(a: np.ndarray, b: np.ndarray) -> float:
     denom = np.linalg.norm(a) * np.linalg.norm(b)
     return float(np.dot(a, b) / denom) if denom else 0.0
 
+def safe_chat_completion(messages, model=CHAT_MODEL, temperature=0.2, max_tokens=220):
+    try:
+        resp = client.chat.completions.create(model=model, messages=messages, temperature=temperature, max_tokens=max_tokens)
+        return resp.choices[0].message.content.strip()
+    except OpenAIError as e:
+        st.error(f"OpenAI API error: {e}")
+        return None
+    except Exception as e:
+        st.error(f"API error: {e}")
+        return None
+
+def safe_embedding(texts, model=EMBED_MODEL):
+    try:
+        resp = client.embeddings.create(model=model, input=texts)
+        return [d.embedding for d in resp.data]
+    except OpenAIError as e:
+        st.error(f"OpenAI Embedding API error: {e}")
+        return None
+    except Exception as e:
+        st.error(f"Embedding error: {e}")
+        return None
+
 # =========================
-# LOAD QA (LEGAL STAIRCASE)
+# LOAD EXCEL FILES (cached)
 # =========================
 @st.cache_data
 def load_qa(path):
@@ -42,22 +80,19 @@ def load_qa(path):
     if "id" not in df.columns:
         df["id"] = np.arange(len(df))
     required = {"id", "Question", "Answer", "Business"}
-    if not required.issubset(df.columns):
-        st.error(f"Missing Excel columns: {required - set(df.columns)}")
-        st.stop()
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"Missing columns in QA file: {missing}")
     return df[["id", "Question", "Answer", "Business"]]
 
-# =========================
-# LOAD LAN DATA
-# =========================
 @st.cache_data
 def load_lan(path):
     df = pd.read_excel(path, dtype={"Lan Id": str})
     df.columns = df.columns.str.strip()
     required = {"Lan Id", "Status", "Business", "Notice Sent Date"}
-    if not required.issubset(df.columns):
-        st.error(f"Missing LAN columns: {required - set(df.columns)}")
-        st.stop()
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"Missing columns in LAN file: {missing}")
     df["Lan Id"] = df["Lan Id"].astype(str).str.strip()
     df["Status"] = df["Status"].astype(str).str.strip()
     df["Business"] = df["Business"].astype(str).str.strip()
@@ -65,157 +100,146 @@ def load_lan(path):
     return df
 
 # =========================
-# EMBEDDINGS
+# EMBEDDINGS: build or load cache
 # =========================
-def embed_texts(texts):
-    resp = client.embeddings.create(model=EMBED_MODEL, input=texts)
-    return [d.embedding for d in resp.data]
+def build_or_load_embeddings(path, cache_path=EMBED_CACHE, force_refresh=False):
+    qa_df = load_qa(path)
+    if not force_refresh and os.path.exists(cache_path):
+        try:
+            with open(cache_path, "rb") as f:
+                saved = pickle.load(f)
+            if saved.get("csv_len") == len(qa_df):
+                return saved["df"], saved["embeddings"]
+        except Exception:
+            pass
 
-def build_or_load_embeddings(path, cache_path):
-    df = load_qa(path)
-    if os.path.exists(cache_path):
-        with open(cache_path, "rb") as f:
-            saved = pickle.load(f)
-        if saved.get("csv_len") == len(df):
-            return saved["df"], saved["embeddings"]
-    corpus = [f"{q} || {a}" for q, a in zip(df["Question"], df["Answer"])]
-    vecs = np.array(embed_texts(corpus), dtype=np.float32)
+    corpus = [f"{q} || {a}" for q, a in zip(qa_df["Question"], qa_df["Answer"])]
+    vecs = safe_embedding(corpus)
+    if vecs is None:
+        raise RuntimeError("Embeddings generation failed.")
+    vecs = np.array(vecs, dtype=np.float32)
     with open(cache_path, "wb") as f:
-        pickle.dump({"df": df, "embeddings": vecs, "csv_len": len(df)}, f)
-    return df, vecs
+        pickle.dump({"df": qa_df, "embeddings": vecs, "csv_len": len(qa_df)}, f)
+    return qa_df, vecs
 
 # =========================
-# RAG RETRIEVAL
+# RAG retrieve
 # =========================
-def retrieve(query, df, embeddings):
-    q_vec = np.array(embed_texts([query])[0])
-    sims = np.array([cosine(q_vec, emb) for emb in embeddings])
-    top_idx = sims.argsort()[::-1][:TOP_K]
-    return [
-        {
-            "id": int(df.iloc[i]["id"]),
-            "question": df.iloc[i]["Question"],
-            "answer": df.iloc[i]["Answer"],
-            "business": df.iloc[i]["Business"],
+def retrieve(query, qa_df, qa_embs, top_k=TOP_K):
+    q_emb = safe_embedding([query])
+    if not q_emb:
+        return []
+    q_vec = np.array(q_emb[0], dtype=np.float32)
+    sims = np.array([cosine(q_vec, e) for e in qa_embs])
+    idx = sims.argsort()[::-1][:top_k]
+    results = []
+    for i in idx:
+        row = qa_df.iloc[i]
+        results.append({
+            "id": int(row["id"]),
+            "question": row["Question"],
+            "answer": row["Answer"],
+            "business": row["Business"],
             "score": float(sims[i])
-        }
-        for i in top_idx
-    ]
+        })
+    return results
 
 # =========================
-# AGENT SUGGESTIONS FOR EXCEL ANSWER
+# AGENT SUGGESTIONS (LAN)
 # =========================
-def agent_suggestions_from_answer(excel_answer):
-    """
-    Given the exact Excel answer text, produce short (<= ~40 words)
-    practical suggestions for a collection agent.
-    """
-    prompt = f"""
-You are a senior NBFC legal + collections strategist advising a CALLING AGENT.
-Do NOT repeat or modify the Excel answer. Do NOT add legal definitions.
-Provide 2–4 short, practical, polite, and tactical suggestions (total ≤ 40 words)
-that a collection agent can use on a call to encourage payment.
-Make them specific (e.g., check payment status, mention notice, ask for commitment date).
-Main Answer (for context only):
-\"\"\"{excel_answer}\"\"\"
-Output ONLY the suggestions as bullet points (one per line), e.g.:
-- Suggestion 1
-- Suggestion 2
-- Suggestion 3
-"""
-    resp = client.chat.completions.create(
-        model=CHAT_MODEL,
-        messages=[{"role":"user","content":prompt}],
-        temperature=0.2,
-    )
-    return resp.choices[0].message.content.strip()
-
-# =========================
-# AGENT SUGGESTIONS FOR LAN RECORD
-# =========================
-def agent_suggestions_for_lan(lan_row):
-    """
-    Create agent suggestions tailored from LAN row fields: Lan Id, Status, Business, Notice Sent Date.
-    """
+def suggestions_for_lan(lan_row):
     lan_id = lan_row.get("Lan Id", "")
-    status = lan_row.get("Status", "")
     business = lan_row.get("Business", "")
+    status = lan_row.get("Status", "")
     date = lan_row.get("Notice Sent Date", None)
     date_str = date.strftime("%d/%m/%Y") if pd.notna(date) else "N/A"
 
     prompt = f"""
-You are a senior NBFC legal + collections strategist advising a CALLING AGENT.
+You are a senior NBFC collections & legal strategist advising a CALLING AGENT.
 Context:
 - LAN ID: {lan_id}
-- Business: {business}
-- Current Status: {status}
-- Last Notice Date: {date_str}
+- Business vertical: {business}
+- Current status: {status}
+- Last notice date: {date_str}
 
 Task:
-Provide 2–4 short, practical, polite, tactical suggestions (total ≤ 40 words)
-that a collection agent should follow when calling this borrower now.
-Do NOT repeat the LAN summary. Output only bullet lines starting with '- '.
+Provide 3 concise, practical, polite, and tactical suggestions (total ≤ 40 words)
+that a collection agent should use on a call to encourage payment.
+Focus on steps the agent should take (verification, tone, mention of notice, ask for commitment).
+Output only bullet lines starting with "- ".
 """
-    resp = client.chat.completions.create(
-        model=CHAT_MODEL,
-        messages=[{"role":"user","content":prompt}],
-        temperature=0.2,
-    )
-    return resp.choices[0].message.content.strip()
+    out = safe_chat_completion([{"role":"user","content":prompt}])
+    if out is None:
+        # fallback suggestions if API fails
+        return "- Confirm if payment was recently made.\n- Remind borrower about notice and ask for payment kindly.\n- Ask for a realistic payment commitment date."
+    return out
 
 # =========================
-# ANSWER LOGIC
+# AGENT SUGGESTIONS (from Excel answer)
 # =========================
-def answer(query, lan_df, qa_df, qa_embs):
-    # Check for LAN ID first
+def suggestions_for_answer(excel_answer):
+    prompt = f"""
+You are a senior NBFC collections strategist advising a CALLING AGENT.
+Do NOT repeat the Excel answer. Use it only as context.
+
+Context (Excel answer):
+\"\"\"{excel_answer}\"\"\"
+
+Task:
+Provide 3 concise, practical, polite, tactical suggestions (total ≤ 40 words)
+a collection agent can use on a call to secure payment.
+Output only bullet lines starting with "- ".
+"""
+    out = safe_chat_completion([{"role":"user","content":prompt}])
+    if out is None:
+        return "- Check if payment was made.\n- Remind about notice & request payment politely.\n- Agree on a commitment date."
+    return out
+
+# =========================
+# MAIN ANSWER FUNCTION
+# =========================
+def answer_query(query, lan_df, qa_df, qa_embs):
+    # 1. If query contains LAN id -> return sentence + suggestions
     lan_match = re.search(r"\b\d{3,}\b", query)
-    if lan_match and lan_df is not None:
+    if lan_match:
         lan_id = lan_match.group(0)
         subset = lan_df[lan_df["Lan Id"].str.strip() == lan_id]
         if not subset.empty:
-            row = subset.sort_values("Notice Sent Date", ascending=False).iloc[0].to_dict()
-            # Build LAN summary string
-            date = row.get("Notice Sent Date", None)
+            row = subset.sort_values("Notice Sent Date", ascending=False).iloc[0]
+            business = row["Business"]
+            status = row["Status"]
+            date = row["Notice Sent Date"]
             date_str = date.strftime("%d/%m/%Y") if pd.notna(date) else "N/A"
-            lan_summary = (
-                f"LAN ID: {row.get('Lan Id')}\n"
-                f"Business: {row.get('Business')}\n"
-                f"Status: {row.get('Status')}\n"
-                f"Last Notice Date: {date_str}"
-            )
-            # Get suggestions tailored to this LAN record
-            try:
-                suggestions = agent_suggestions_for_lan(row)
-            except Exception as e:
-                suggestions = "- Check payment status.\n- Politely remind about notice and ask for payment."
+            # Build one-line sentence as requested
+            sentence = f"LAN number {lan_id} belongs to the {business} vertical and on this LAN \"{status}\" was sent on {date_str}."
+            # Get suggestions tailored to LAN record
+            suggestions = suggestions_for_lan(row)
+            return f"{sentence}\n\nAgent Suggestions:\n{suggestions}"
 
-            return f"### LAN Summary\n{lan_summary}\n\n### Agent Suggestions\n{suggestions}"
-
-    # Otherwise use RAG over legal staircase
-    try:
-        contexts = retrieve(query, qa_df, qa_embs)
-    except Exception as e:
-        return "Error retrieving context. Check embeddings and API."
-
+    # 2. Otherwise: RAG from Excel QA -> exact Excel answer + suggestions
+    contexts = retrieve(query, qa_df, qa_embs)
     if not contexts:
         return "No relevant information found in the legal staircase file."
 
     best = contexts[0]
     excel_answer = best["answer"]
-
-    # get agent suggestions for the excel answer
-    try:
-        suggestions = agent_suggestions_from_answer(excel_answer)
-    except Exception:
-        suggestions = "- Check if payment was made.\n- Remind customer politely about legal notice."
-
-    return f"### Answer (from Excel)\n{excel_answer}\n\n### Agent Suggestions\n{suggestions}"
+    suggestions = suggestions_for_answer(excel_answer)
+    return f"Answer (from Excel):\n{excel_answer}\n\nAgent Suggestions:\n{suggestions}"
 
 # =========================
-# LOAD DATA ONCE
+# LOAD DATA (once)
 # =========================
-qa_df, qa_embs = build_or_load_embeddings(EXCEL_QA_PATH, EMBED_CACHE)
-lan_df = load_lan(EXCEL_LAN_PATH)
+try:
+    qa_df, qa_embs = build_or_load_embeddings(EXCEL_QA_PATH, EMBED_CACHE)
+except Exception as e:
+    st.error(f"Failed to load or build embeddings: {e}")
+    st.stop()
+
+try:
+    lan_df = load_lan(EXCEL_LAN_PATH)
+except Exception as e:
+    st.error(f"Failed to load LAN file: {e}")
+    st.stop()
 
 # =========================
 # STREAMLIT UI
@@ -229,7 +253,7 @@ query = st.text_input("Ask your question (or enter LAN id):")
 
 if st.button("Send"):
     if query:
-        result = answer(query, lan_df, qa_df, qa_embs)
+        result = answer_query(query, lan_df, qa_df, qa_embs)
         st.session_state.messages.append({"role":"user","content":query})
         st.session_state.messages.append({"role":"assistant","content":result})
 
