@@ -80,7 +80,9 @@ if not OPENAI_API_KEY:
     st.error("OPENAI_API_KEY missing in Streamlit Secrets.")
     st.stop()
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+#client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI()
+
 
 # ======================================================
 # UTILITIES
