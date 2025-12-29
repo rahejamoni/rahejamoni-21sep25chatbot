@@ -72,7 +72,7 @@ OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY")
 QA_FILE = "legal_staircase.xlsx"
 LAN_FILE = "lan_data.xlsx"
 
-EMBED_CACHE = "qa_embeddings.pkl"
+EMBED_CACHE = "qa_embeddings_v2.pkl"
 EMBED_MODEL = "text-embedding-3-small"
 CHAT_MODEL = "gpt-4o-mini"
 
