@@ -2,7 +2,6 @@ import os
 import re
 import pickle
 import io
-import textwrap
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -71,73 +70,41 @@ section[data-testid="stSidebar"] {
 """, unsafe_allow_html=True)
 
 # ======================================================
-# OPENAI CONFIG
+# OPENAI CONFIG (ASSUMES SECRET SET)
 # ======================================================
-if "OPENAI_API_KEY" in st.secrets:
-    openai.api_key = st.secrets["OPENAI_API_KEY"]
-else:
-    st.error("Please set the OPENAI_API_KEY in Streamlit Secrets.")
+openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 # ======================================================
-# PDF GENERATOR (WITH LINE WRAPPING)
+# PDF GENERATOR
 # ======================================================
 def generate_pdf(query, answer, tips):
     buffer = io.BytesIO()
     p = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
-    margin = 50
-    line_width = 90  # Characters per line
 
-    # Header
     p.setFont("Helvetica-Bold", 16)
-    p.drawString(margin, height - 50, "NBFC LEGAL INTELLIGENCE REPORT")
-    
+    p.drawString(50, height - 50, "NBFC LEGAL INTELLIGENCE REPORT")
+
     p.setFont("Helvetica", 10)
-    p.drawString(margin, height - 70, f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    p.line(margin, height - 80, width - margin, height - 80)
+    p.drawString(50, height - 70, f"Generated on: {datetime.now()}")
 
-    # User Query Section
     p.setFont("Helvetica-Bold", 12)
-    p.drawString(margin, height - 110, "User Query:")
+    p.drawString(50, height - 110, "Query:")
     p.setFont("Helvetica", 11)
-    wrapped_query = textwrap.wrap(query, width=line_width)
-    y = height - 130
-    for line in wrapped_query:
-        p.drawString(margin, y, line)
-        y -= 15
+    p.drawString(50, height - 130, query)
 
-    # System Interpretation Section
-    y -= 20
     p.setFont("Helvetica-Bold", 12)
-    p.drawString(margin, y, "System Interpretation:")
+    p.drawString(50, height - 170, "System Interpretation:")
+    text = p.beginText(50, height - 190)
+    text.setFont("Helvetica", 11)
+    for line in answer.split("\n"):
+        text.textLine(line)
+    p.drawText(text)
+
+    p.setFont("Helvetica-Bold", 12)
+    p.drawString(50, text.getY() - 30, "Agent Guidance:")
     p.setFont("Helvetica", 11)
-    y -= 20
-    
-    # Wrap and print the answer text
-    wrapped_answer = textwrap.wrap(answer, width=line_width)
-    for line in wrapped_answer:
-        if y < 50: # Simple page break check
-            p.showPage()
-            y = height - 50
-            p.setFont("Helvetica", 11)
-        p.drawString(margin, y, line)
-        y -= 15
-
-    # Agent Guidance Section
-    y -= 25
-    p.setFont("Helvetica-Bold", 12)
-    p.drawString(margin, y, "Agent Strategic Guidance:")
-    p.setFont("Helvetica-Oblique", 11)
-    y -= 20
-    
-    wrapped_tips = textwrap.wrap(tips, width=line_width)
-    for line in wrapped_tips:
-        if y < 50:
-            p.showPage()
-            y = height - 50
-            p.setFont("Helvetica-Oblique", 11)
-        p.drawString(margin, y, line)
-        y -= 15
+    p.drawString(50, text.getY() - 50, tips)
 
     p.showPage()
     p.save()
@@ -145,18 +112,32 @@ def generate_pdf(query, answer, tips):
     return buffer
 
 # ======================================================
-# SIDEBAR
+# SIDEBAR (INTEL CENTER)
 # ======================================================
 with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/1055/1055644.png", width=70)
     st.markdown("## Intel Center")
     st.markdown("---")
-    st.markdown("### 🔍 Capabilities")
+
+    st.markdown("### 🔍 What does this assistant do?")
     st.markdown("""
-    - Legal Staircase Interpretation
-    - LAN-level Status Retrieval
-    - Compliance Check
-    - Agent Call Strategy
-    """)
+- Explains NBFC legal notices and recovery stages  
+- Interprets SARFAESI, Section 138 & arbitration steps  
+- Fetches LAN-level recovery status  
+- Suggests compliant customer communication  
+
+⚠️ *For operational guidance only. Not legal advice.*
+""")
+
+    st.markdown("---")
+
+    st.markdown("### ℹ️ How to use")
+    st.markdown("""
+- Ask a legal or collections question  
+- Enter a LAN ID (e.g. 22222)  
+- Review system response and agent suggestions  
+""")
+
     st.markdown("---")
     st.caption("Designed by **Mohit Raheja**")
 
@@ -166,46 +147,87 @@ with st.sidebar:
 st.markdown('<div class="hero-text">Legal Intelligence Hub</div>', unsafe_allow_html=True)
 st.markdown('<p class="sub-text">AI-powered decision support for NBFC collections & legal compliance</p>', unsafe_allow_html=True)
 
-# Bento Modules
+# ======================================================
+# THREE CORE MODULES
+# ======================================================
 c1, c2, c3 = st.columns(3)
+
 with c1:
-    st.markdown('<div class="bento-card"><h4>⚖️ Legal Staircase</h4><p class="small-text">SARFAESI, Sec 138, and Arbitration analysis.</p></div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="bento-card">
+    <h4>⚖️ Legal Staircase</h4>
+    <p class="small-text">
+    Step-by-step interpretation of SARFAESI, Section 138, Demand, Pre-Sale & Arbitration.
+    </p>
+    </div>
+    """, unsafe_allow_html=True)
+
 with c2:
-    st.markdown('<div class="bento-card"><h4>🔍 LAN Intelligence</h4><p class="small-text">Real-time status tracking via Loan Account Number.</p></div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="bento-card">
+    <h4>🔍 LAN Intelligence</h4>
+    <p class="small-text">
+    Fetch recovery status, notice stage and action readiness using LAN ID.
+    </p>
+    </div>
+    """, unsafe_allow_html=True)
+
 with c3:
-    st.markdown('<div class="bento-card"><h4>📞 Communication</h4><p class="small-text">Audit-safe calling scripts and guidance.</p></div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="bento-card">
+    <h4>📞 Communication</h4>
+    <p class="small-text">
+    Polite, compliant and audit-safe calling guidance for agents.
+    </p>
+    </div>
+    """, unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ======================================================
-# QUERY ENGINE
+# QUERY INPUT
 # ======================================================
 query = st.chat_input("Ask a legal question or enter LAN ID...")
 
 if query:
-    with st.spinner("Analyzing..."):
-        # Logic Placeholder: Replace these with your actual model/dataframe calls
-        answer_text = "A pre-sale notice is a mandatory legal communication issued before auction informing the borrower of outstanding dues and proposed sale date. Under current NBFC guidelines, this serves as the final opportunity for settlement before the asset is liquidated."
-        agent_tips = "1. Confirm receipt of the notice. 2. Inform borrower of limited time before auction. 3. Encourage immediate payment or a structured settlement discussion to prevent the auction process."
+    with st.spinner("Analyzing through Legal Intelligence Engine..."):
+        # ---- MOCK LOGIC (replace with your real logic) ----
+        answer_text = (
+            "A pre-sale notice is a mandatory legal communication issued before auction "
+            "informing the borrower of outstanding dues and proposed sale date."
+        )
+
+        agent_tips = (
+            "1. Confirm receipt of the notice.\n"
+            "2. Inform borrower of limited time before auction.\n"
+            "3. Encourage immediate payment or settlement discussion."
+        )
 
     col_ans, col_tip = st.columns([2, 1])
 
     with col_ans:
         st.markdown("### 🧠 System Response")
-        st.markdown(f'<div class="response-card">{answer_text}</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="response-card">
+        {answer_text}
+        </div>
+        """, unsafe_allow_html=True)
 
     with col_tip:
         st.markdown("### 🎧 Agent Suggestions")
-        st.markdown(f'<div class="agent-card">{agent_tips}</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="agent-card">
+        {agent_tips}
+        </div>
+        """, unsafe_allow_html=True)
 
-    # PDF Download Button
-    st.markdown("---")
-    pdf_output = generate_pdf(query, answer_text, agent_tips)
+    # PDF DOWNLOAD
+    pdf = generate_pdf(query, answer_text, agent_tips)
     st.download_button(
         label="📄 Download Legal Summary (PDF)",
-        data=pdf_output,
-        file_name=f"NBFC_Report_{datetime.now().strftime('%d%m%Y')}.pdf",
-        mime="application/pdf"
+        data=pdf,
+        file_name="NBFC_Legal_Summary.pdf",
+        mime="application/pdf",
     )
 
 # ======================================================
@@ -214,6 +236,7 @@ if query:
 st.markdown("""
 <hr>
 <p style="text-align:center; color:#64748b; font-size:13px;">
-NBFC Legal Intelligence Hub | Created by <b>Mohit Raheja</b>
+NBFC Legal Intelligence Hub | Applied AI Project<br>
+Created by <b>Mohit Raheja</b>
 </p>
 """, unsafe_allow_html=True)
