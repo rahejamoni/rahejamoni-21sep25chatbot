@@ -16,21 +16,32 @@ st.set_page_config(
 )
 
 # ======================================================
-# BASIC CSS (VISIBLE UI CHANGE)
+# GLOBAL CSS (CLEAN, ENTERPRISE LOOK)
 # ======================================================
 st.markdown("""
 <style>
 body { background-color: #0e1117; }
 .block-container { padding-top: 2rem; }
+
 .card {
     background-color: #161b22;
     padding: 20px;
-    border-radius: 12px;
+    border-radius: 14px;
     margin-bottom: 20px;
 }
+
 .small-text {
     color: #9ba3af;
-    font-size: 15px;
+    font-size: 14.5px;
+}
+
+.section-title {
+    font-size: 20px;
+    font-weight: 600;
+}
+
+hr {
+    border: 0.5px solid #2a2f3a;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -40,47 +51,13 @@ body { background-color: #0e1117; }
 # ======================================================
 st.markdown("""
 <div class="card">
-<h1>📘 NBFC Legal & Collections Intelligence Assistant</h1>
-<p class="small-text">
-AI-powered decision-support system for NBFC collection agents to understand
-legal processes, loan status, and compliant recovery actions
-</p>
+    <h1>📘 NBFC Legal & Collections Intelligence Assistant</h1>
+    <p class="small-text">
+    AI-powered decision-support system for NBFC collection agents to understand
+    legal processes, loan status, and compliant recovery actions
+    </p>
 </div>
 """, unsafe_allow_html=True)
-
-# ======================================================
-# INTRODUCTION
-# ======================================================
-col_left, col_right = st.columns(2)
-
-with col_left:
-    st.markdown("""
-    <div class="card">
-    <h3>🔍 What does this assistant do?</h3>
-    <ul class="small-text">
-        <li>Explains NBFC legal notices (Pre-sale, Auction, Possession, etc.)</li>
-        <li>Identifies recovery status using Loan Account Number (LAN)</li>
-        <li>Guides agents on compliance timelines</li>
-        <li>Answers general knowledge questions when applicable</li>
-        <li>Suggests polite, compliant customer communication</li>
-    </ul>
-    <p class="small-text">⚠️ This tool assists agents and does not replace legal advice.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col_right:
-    st.markdown("""
-    <div class="card">
-    <h3>ℹ️ How to use</h3>
-    <ul class="small-text">
-        <li>Ask NBFC legal or collections-related questions</li>
-        <li>Enter a LAN ID to check recovery status</li>
-        <li>Ask general questions (capital, definitions, etc.)</li>
-        <li>Review suggested compliant agent responses</li>
-    </ul>
-    </div>
-    """, unsafe_allow_html=True)
-
 
 # ======================================================
 # CONFIG
@@ -118,94 +95,63 @@ def embed(texts):
     )
     return [d["embedding"] for d in response["data"]]
 
-# ======================================================
-# QUESTION TYPE DETECTOR (HYBRID ROUTING)
-# ======================================================
 def is_general_question(query: str) -> bool:
     keywords = [
         "capital", "prime minister", "president", "population",
-        "country", "india", "delhi", "weather", "define",
-        "who is", "what is", "history", "math"
+        "country", "india", "delhi", "define", "what is", "who is"
     ]
     q = query.lower()
     return any(k in q for k in keywords)
 
 # ======================================================
-# LOAD LEGAL QA (SAFE)
+# LOAD DATA
 # ======================================================
 @st.cache_data
 def load_qa():
     df = pd.read_excel(QA_FILE)
     df.columns = df.columns.str.strip().str.lower()
-
-    rename_map = {
+    df = df.rename(columns={
         "question": "Question",
         "questions": "Question",
         "answer": "Answer",
         "answers": "Answer",
         "business": "Business",
         "vertical": "Business"
-    }
-    df = df.rename(columns=rename_map)
-
-    required = {"Question", "Answer", "Business"}
-    missing = required - set(df.columns)
-    if missing:
-        st.error(f"Missing columns in legal_staircase.xlsx: {missing}")
-        st.stop()
-
+    })
     df["id"] = range(len(df))
     return df[["id", "Question", "Answer", "Business"]]
 
-# ======================================================
-# LOAD LAN DATA (SAFE)
-# ======================================================
 @st.cache_data
 def load_lan():
     df = pd.read_excel(LAN_FILE, dtype=str)
-    df.columns = df.columns.str.strip()
-
-    required = {"Lan Id", "Status", "Business", "Notice Sent Date"}
-    missing = required - set(df.columns)
-    if missing:
-        st.error(f"Missing columns in lan_data.xlsx: {missing}")
-        st.stop()
-
-    df["Lan Id"] = df["Lan Id"].astype(str).str.strip()
-    df["Notice Sent Date"] = pd.to_datetime(
-        df["Notice Sent Date"], errors="coerce", dayfirst=True
-    )
+    df["Notice Sent Date"] = pd.to_datetime(df["Notice Sent Date"], errors="coerce", dayfirst=True)
     return df
 
-# ======================================================
-# BUILD / LOAD EMBEDDINGS (SAFE CACHE)
-# ======================================================
 def build_embeddings():
     qa_df = load_qa()
-
     if os.path.exists(EMBED_CACHE):
         try:
             with open(EMBED_CACHE, "rb") as f:
                 saved = pickle.load(f)
-            if isinstance(saved, dict) and "emb" in saved:
-                if saved.get("len") == len(qa_df):
-                    return qa_df, saved["emb"]
+            if saved.get("len") == len(qa_df):
+                return qa_df, saved["emb"]
         except Exception:
             pass
 
     corpus = [q + " || " + a for q, a in zip(qa_df["Question"], qa_df["Answer"])]
     emb = np.array(embed(corpus), dtype=np.float32)
-
     with open(EMBED_CACHE, "wb") as f:
         pickle.dump({"emb": emb, "len": len(qa_df)}, f)
-
     return qa_df, emb
 
+qa_df, qa_emb = build_embeddings()
+lan_df = load_lan()
+
 # ======================================================
-# MAIN ANSWER LOGIC (HYBRID AI)
+# MAIN ANSWER LOGIC
 # ======================================================
 def answer_query(query):
-    # 1️⃣ LAN lookup
+    # LAN routing
     lan_match = re.search(r"\b\d{3,}\b", query)
     if lan_match:
         lan_id = lan_match.group(0)
@@ -213,86 +159,65 @@ def answer_query(query):
         if not row.empty:
             r = row.iloc[0]
             date = r["Notice Sent Date"]
-            d = date.strftime("%d-%m-%Y") if pd.notna(date) else "N/A"
-
+            date_str = date.strftime("%d-%m-%Y") if pd.notna(date) else "N/A"
             answer = (
                 f"LAN {lan_id} belongs to **{r['Business']}** vertical. "
-                f"Current status is **{r['Status']}**, notice sent on **{d}**."
+                f"Current status is **{r['Status']}**, notice sent on **{date_str}**."
             )
-
-            tips = chat(
-                f"Give 3 polite, compliant NBFC collection call suggestions for this case:\n{answer}"
-            )
+            tips = chat(f"Give 3 polite NBFC collection call suggestions:\n{answer}")
             return answer, tips
 
-    # 2️⃣ General knowledge → OpenAI directly
+    # General knowledge routing
     if is_general_question(query):
         return chat(query), ""
 
-    # 3️⃣ Legal / NBFC RAG
+    # Legal RAG
     q_vec = embed([query])[0]
     sims = [cosine(q_vec, e) for e in qa_emb]
     best_idx = int(np.argmax(sims))
-    best_score = max(sims)
 
-    # Low confidence → OpenAI fallback
-    if best_score < 0.35:
+    if max(sims) < 0.35:
         return chat(query), ""
 
     best_answer = qa_df.iloc[best_idx]["Answer"]
-
-    tips = chat(
-        f"Give 3 polite NBFC collection call suggestions using this context:\n{best_answer}"
-    )
+    tips = chat(f"Give 3 compliant call suggestions using this context:\n{best_answer}")
     return best_answer, tips
 
 # ======================================================
-# LOAD DATA
+# INFORMATION SECTION (FULL-WIDTH UTILIZATION)
 # ======================================================
-qa_df, qa_emb = build_embeddings()
-lan_df = load_lan()
+left_info, right_info = st.columns([2.2, 1.3])
 
-# ======================================================
-# INPUT UI
-# ======================================================
-left_col, right_col = st.columns([2, 1])
-
-# ================= LEFT COLUMN =================
-with left_col:
-    st.markdown('<div class="card"><h3>💬 Ask a Question</h3></div>', unsafe_allow_html=True)
-
-    query = st.text_input(
-        "",
-        placeholder="e.g. What is a pre-sale notice? | What is the capital of India? | Enter LAN ID"
-    )
-
-    if st.button("🚀 Submit"):
-        if query.strip():
-            answer, tips = answer_query(query)
-
-            st.markdown('<div class="card"><h3>🧠 System Response</h3></div>', unsafe_allow_html=True)
-            st.success(answer)
-
-            if tips:
-                st.markdown('<div class="card"><h3>🎧 Agent Compliance Suggestions</h3></div>', unsafe_allow_html=True)
-                st.warning(tips)
-
-# ================= RIGHT COLUMN =================
-with right_col:
+with left_info:
     st.markdown("""
     <div class="card">
-    <h4>ℹ️ How to use</h4>
+    <div class="section-title">🔍 What does this assistant do?</div>
     <ul class="small-text">
-        <li>Ask NBFC legal questions</li>
-        <li>Enter LAN ID to check recovery status</li>
-        <li>Ask general questions (capital, definitions, etc.)</li>
+        <li>Explains NBFC legal notices (Pre-sale, Auction, Possession, etc.)</li>
+        <li>Identifies recovery status using Loan Account Number (LAN)</li>
+        <li>Guides agents on compliance timelines</li>
+        <li>Answers general knowledge questions when applicable</li>
+        <li>Suggests polite, compliant customer communication</li>
+    </ul>
+    <p class="small-text">⚠️ This tool assists agents and does not replace legal advice.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+with right_info:
+    st.markdown("""
+    <div class="card">
+    <div class="section-title">ℹ️ How to use</div>
+    <ul class="small-text">
+        <li>Ask NBFC legal or collections questions</li>
+        <li>Enter a LAN ID to check recovery status</li>
+        <li>Ask general questions (capital, definitions)</li>
     </ul>
     </div>
     """, unsafe_allow_html=True)
 
     st.markdown("""
     <div class="card">
-    <h4>🧪 Example Queries</h4>
+    <div class="section-title">🧪 Example Queries</div>
     <ul class="small-text">
         <li>What is a pre-sale notice?</li>
         <li>What is the capital of India?</li>
@@ -303,19 +228,45 @@ with right_col:
 
     st.markdown("""
     <div class="card">
-    <h4>⚙️ System Capabilities</h4>
+    <div class="section-title">⚙️ System Capabilities</div>
     <ul class="small-text">
-        <li>Domain-specific legal RAG</li>
-        <li>LAN-based decision logic</li>
-        <li>General LLM fallback</li>
+        <li>Hybrid AI routing (RAG + LLM fallback)</li>
+        <li>LAN-based rule intelligence</li>
         <li>Compliance-safe suggestions</li>
     </ul>
     </div>
     """, unsafe_allow_html=True)
 
+# ======================================================
+# QUERY SECTION
+# ======================================================
+st.markdown("""
+<div class="card">
+<div class="section-title">💬 Ask a Question</div>
+</div>
+""", unsafe_allow_html=True)
+
+query = st.text_input(
+    "",
+    placeholder="e.g. What is a pre-sale notice? | What is the capital of India? | Enter LAN ID"
+)
+
+if st.button("🚀 Submit"):
+    if query.strip():
+        answer, tips = answer_query(query)
+        st.markdown("<div class='card'><b>🧠 System Response</b></div>", unsafe_allow_html=True)
+        st.success(answer)
+
+        if tips:
+            st.markdown("<div class='card'><b>🎧 Agent Compliance Suggestions</b></div>", unsafe_allow_html=True)
+            st.warning(tips)
+
+# ======================================================
+# FOOTER
+# ======================================================
 st.markdown("""
 <hr>
 <p style="text-align:center; color:#9ba3af; font-size:14px;">
-Created by <b>Mohit Raheja</b> | AI & Data Science Project
+Created by <b>Mohit Raheja</b> | Applied AI & Decision Intelligence Project
 </p>
 """, unsafe_allow_html=True)
