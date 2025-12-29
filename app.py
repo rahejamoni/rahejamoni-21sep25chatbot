@@ -17,199 +17,185 @@ st.set_page_config(
 )
 
 # ======================================================
-# ADVANCED CUSTOM CSS (Glassmorphism & Professional UI)
+# CUSTOM CSS – ENTERPRISE UI
 # ======================================================
 st.markdown("""
 <style>
-    /* Main App Background */
-    .stApp {
-        background: radial-gradient(circle at top left, #1e293b, #0f172a);
-        color: #f8fafc;
-    }
-
-    /* Sidebar Styling */
-    section[data-testid="stSidebar"] {
-        background-color: rgba(15, 23, 42, 0.8);
-        border-right: 1px solid rgba(255,255,255,0.1);
-    }
-
-    /* Bento Box Cards */
-    .bento-card {
-        background: rgba(255, 255, 255, 0.03);
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 16px;
-        padding: 24px;
-        margin-bottom: 20px;
-        transition: transform 0.3s ease;
-    }
-    .bento-card:hover {
-        border: 1px solid rgba(0, 160, 240, 0.4);
-        transform: translateY(-2px);
-    }
-
-    /* Typography */
-    .hero-text {
-        font-size: 3rem;
-        font-weight: 800;
-        background: linear-gradient(90deg, #3b82f6, #2dd4bf);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 0.5rem;
-    }
-    .sub-text {
-        color: #94a3b8;
-        font-size: 1.1rem;
-        margin-bottom: 2rem;
-    }
-
-    /* Status Tags */
-    .status-tag {
-        display: inline-block;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 600;
-        background: rgba(45, 212, 191, 0.1);
-        color: #2dd4bf;
-        border: 1px solid rgba(45, 212, 191, 0.2);
-    }
-
-    /* Custom Chat Container */
-    .response-area {
-        background: rgba(15, 23, 42, 0.6);
-        border-radius: 12px;
-        padding: 20px;
-        border-left: 4px solid #3b82f6;
-    }
-    
-    /* Input Styling */
-    .stTextInput input {
-        background-color: rgba(255,255,255,0.05) !important;
-        border: 1px solid rgba(255,255,255,0.1) !important;
-        color: white !important;
-        border-radius: 10px !important;
-    }
+.stApp {
+    background: radial-gradient(circle at top left, #1e293b, #0f172a);
+    color: #f8fafc;
+}
+.hero-text {
+    font-size: 2.8rem;
+    font-weight: 800;
+    background: linear-gradient(90deg, #3b82f6, #2dd4bf);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.sub-text {
+    color: #94a3b8;
+    font-size: 1.05rem;
+    margin-bottom: 1.8rem;
+}
+.bento-card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 20px;
+}
+.status-tag {
+    display:inline-block;
+    padding:4px 12px;
+    border-radius:20px;
+    font-size:12px;
+    background:rgba(45,212,191,0.15);
+    color:#2dd4bf;
+}
+.response-area {
+    background: rgba(15,23,42,0.7);
+    border-left: 4px solid #3b82f6;
+    border-radius: 12px;
+    padding: 18px;
+}
+.action-box {
+    background: rgba(59,130,246,0.12);
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 10px;
+    border: 1px solid rgba(59,130,246,0.25);
+}
+.stChatInputContainer {
+    position: sticky;
+    bottom: 0;
+    background: #0f172a;
+    padding-top: 10px;
+}
 </style>
 """, unsafe_allow_html=True)
 
 # ======================================================
-# SIDEBAR NAVIGATION & STATS
+# OPENAI CONFIG (stable)
+# ======================================================
+if "OPENAI_API_KEY" not in st.secrets:
+    st.error("OPENAI_API_KEY missing.")
+    st.stop()
+
+openai.api_key = st.secrets["OPENAI_API_KEY"]
+
+# ======================================================
+# SIDEBAR
 # ======================================================
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/1055/1055644.png", width=80)
+    st.image("https://cdn-icons-png.flaticon.com/512/1055/1055644.png", width=70)
     st.markdown("## Intel Center")
-    st.markdown("---")
-    
-    # Dynamic Stats
     st.markdown("### 📊 Live Analytics")
-    st.metric(label="Compliance Score", value="98.2%", delta="0.4%")
-    st.metric(label="Case Resolution", value="1.4k", delta="12% vs LY")
-    
-    st.markdown("---")
+    st.metric("Compliance Score", "98.2%", "+0.4%")
+    st.metric("Case Resolution", "1.4k", "+12%")
     st.caption("v2.4.0 High-Performance Edition")
     st.caption(f"Last sync: {datetime.now().strftime('%H:%M:%S')}")
 
 # ======================================================
-# MAIN HERO SECTION
+# HERO SECTION
 # ======================================================
 st.markdown('<h1 class="hero-text">Legal Intelligence Hub</h1>', unsafe_allow_html=True)
 st.markdown('<p class="sub-text">Advanced decision-support for NBFC collections and legal risk mitigation.</p>', unsafe_allow_html=True)
 
-# Bento Grid for Features
-col1, col2, col3 = st.columns(3)
+# ======================================================
+# FEATURE CARDS
+# ======================================================
+c1, c2, c3 = st.columns(3)
 
-with col1:
+with c1:
     st.markdown("""
     <div class="bento-card">
         <h4 style="color:#3b82f6;">⚖️ Legal Staircase</h4>
-        <p style="font-size: 0.9rem; color: #94a3b8;">Instant interpretation of Section 138, Sarfaesi, and Arbitration protocols.</p>
-        <span class="status-tag">Updated: RBI 2024</span>
+        <p class="sub-text">Interpret SARFAESI, Section 138 & Arbitration steps.</p>
+        <span class="status-tag">RBI 2024</span>
     </div>
     """, unsafe_allow_html=True)
 
-with col2:
+with c2:
     st.markdown("""
     <div class="bento-card">
         <h4 style="color:#2dd4bf;">🔍 LAN Intelligence</h4>
-        <p style="font-size: 0.9rem; color: #94a3b8;">Real-time loan status, notice history, and debtor behavioral flags.</p>
-        <span class="status-tag">Active Database</span>
+        <p class="sub-text">Fetch notice history & recovery status via LAN.</p>
+        <span class="status-tag">Live Data</span>
     </div>
     """, unsafe_allow_html=True)
 
-with col3:
+with c3:
     st.markdown("""
     <div class="bento-card">
         <h4 style="color:#f59e0b;">📞 Communication</h4>
-        <p style="font-size: 0.9rem; color: #94a3b8;">Compliant call scripts generated dynamically based on case severity.</p>
-        <span class="status-tag">Audit-Ready</span>
+        <p class="sub-text">Get compliant, audit-ready call scripts.</p>
+        <span class="status-tag">Agent Ready</span>
     </div>
     """, unsafe_allow_html=True)
 
 # ======================================================
-# SEARCH & QUERY ENGINE
+# QUERY INPUT (STICKY, CHAT STYLE)
 # ======================================================
 st.markdown("### 🧬 Query Intelligence")
-query = st.chat_input("Ask a question (e.g., 'What is the limitation period for vehicle repossession?')")
+query = st.chat_input("Ask a legal question or enter LAN ID (e.g. 22222)")
 
+# ======================================================
+# ANSWER ENGINE (DEMO + AGENT SUGGESTIONS)
+# ======================================================
 if query:
-    # Logic Processing Placeholder
-    # (In your real app, call your answer_query function here)
-    with st.spinner("Processing through Legal Engine..."):
-        # Simulated logic for the demo
+    with st.spinner("Processing through Legal Intelligence Engine..."):
+
+        # ---- DEMO LOGIC (replace with your real RAG later) ----
         is_lan = re.search(r"\b\d{3,}\b", query)
-        
-        # Display Area
-        st.markdown("---")
-        res_col, tip_col = st.columns([2, 1])
-        
-        with res_col:
-            st.markdown("#### 💡 Intelligence Output")
+
+        if is_lan:
+            answer = (
+                f"LAN **{is_lan.group()}** is currently under **Pre-Sale Notice stage**. "
+                "The notice was sent and the cooling period is active."
+            )
+            agent_steps = [
+                "Verify notice delivery acknowledgment.",
+                "Check if any payment was made post-notice.",
+                "Offer last-mile settlement before auction."
+            ]
+        else:
+            answer = (
+                "The staircase of consumer finance refers to progressive legal and financial "
+                "actions taken as a loan moves from early delinquency to recovery, including "
+                "reminders, notices, possession, and auction."
+            )
+            agent_steps = [
+                "Confirm delinquency stage (DPD bucket).",
+                "Explain next legal step clearly to the customer.",
+                "Seek a payment commitment date."
+            ]
+
+    # ======================================================
+    # COMPACT RESPONSE LAYOUT (NO SCROLL)
+    # ======================================================
+    res_col, act_col = st.columns([2.2, 1])
+
+    with res_col:
+        st.markdown("#### 💡 Legal Interpretation")
+        st.markdown(f"""
+        <div class="response-area">
+            {answer}
+        </div>
+        """, unsafe_allow_html=True)
+
+    with act_col:
+        st.markdown("#### 🚀 Agent Suggestions")
+        for step in agent_steps:
             st.markdown(f"""
-            <div class="response-area">
-                <strong>Result for:</strong> <em>"{query}"</em><br><br>
-                Based on current NBFC guidelines, the requested action is compliant under the <strong>Master Circular on Loans and Advances</strong>. 
-                The Limitation Act specifies a 3-year window for recovery suits from the date of default.
-            </div>
+            <div class="action-box">• {step}</div>
             """, unsafe_allow_html=True)
-            
-        with tip_col:
-            st.markdown("#### 🛠️ Action Plan")
-            st.warning("**Step 1:** Verify the DPD (Days Past Due) bucket.")
-            st.info("**Step 2:** Ensure the 15-day Pre-sale Notice is acknowledged.")
-            st.success("**Step 3:** Use Script #14 for high-intent communication.")
-
-# ======================================================
-# INTERACTIVE DATA TABS (Below the Chat)
-# ======================================================
-st.markdown("<br>", unsafe_allow_html=True)
-tab1, tab2 = st.tabs(["📋 Recent Case Logs", "📑 Compliance Knowledge Base"])
-
-with tab1:
-    # Example of how to show your LAN dataframe professionally
-    mock_data = pd.DataFrame({
-        "LAN ID": ["10293", "10294", "10295"],
-        "Notice Type": ["Sec 138", "Pre-Sale", "Demand Notice"],
-        "Status": ["Delivered", "In-Transit", "Expired"],
-        "Risk Level": ["High", "Medium", "Low"]
-    })
-    st.dataframe(mock_data, use_container_width=True)
-
-with tab2:
-    st.markdown("""
-    * **SARFAESI Act:** Procedure for enforcing security interest.
-    * **Section 138:** Negotiable Instruments Act (Cheque Bounce).
-    * **RBI Fair Practices Code:** Guidelines for collection agents.
-    """)
 
 # ======================================================
 # FOOTER
 # ======================================================
 st.markdown("""
-    <div style="margin-top: 50px; padding: 20px; text-align: center; border-top: 1px solid rgba(255,255,255,0.05);">
-        <p style="color: #64748b; font-size: 0.8rem;">
-            Designed by <strong>Mohit Raheja</strong> | Applied AI Division<br>
-            Secure Enterprise Instance - 128-bit Encryption Active
-        </p>
-    </div>
+<hr>
+<p style="text-align:center; color:#64748b; font-size:0.85rem;">
+Designed by <strong>Mohit Raheja</strong> | Applied AI & Decision Intelligence<br>
+Enterprise-grade NBFC Legal Assistant
+</p>
 """, unsafe_allow_html=True)
