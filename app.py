@@ -19,39 +19,62 @@ st.set_page_config(
 )
 
 # ======================================================
-# CSS – PREMIUM APP UI
+# CSS – SAFE, COMPACT, NON-BREAKING
 # ======================================================
 st.markdown("""
 <style>
-.stApp { background: radial-gradient(circle at top left, #1e293b, #0f172a); color:#f8fafc; }
-.hero { font-size:2.6rem; font-weight:800;
-background:linear-gradient(90deg,#3b82f6,#2dd4bf);
--webkit-background-clip:text;-webkit-text-fill-color:transparent;}
-.sub { color:#94a3b8; margin-bottom:20px; }
-.card { background:rgba(255,255,255,0.04); border-radius:16px; padding:18px; }
-.bento { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1);
-border-radius:18px; padding:22px; }
-.answer { background:rgba(15,23,42,0.7); border-left:4px solid #3b82f6;
-border-radius:12px; padding:18px; }
-.agent { background:rgba(45,212,191,0.12); border-left:4px solid #2dd4bf;
-border-radius:12px; padding:16px; }
-.small { font-size:0.85rem; color:#94a3b8; }
+.stApp {
+    background: radial-gradient(circle at top left, #1e293b, #0f172a);
+    color: #f8fafc;
+}
+.hero {
+    font-size: 2.6rem;
+    font-weight: 800;
+    background: linear-gradient(90deg,#3b82f6,#2dd4bf);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.card {
+    background: rgba(255,255,255,0.04);
+    border-radius: 14px;
+    padding: 18px;
+}
+.small {
+    font-size: 0.85rem;
+    color: #94a3b8;
+}
+.response {
+    background: rgba(15,23,42,0.7);
+    border-left: 4px solid #3b82f6;
+    padding: 16px;
+    border-radius: 10px;
+}
+.agent {
+    background: rgba(45,212,191,0.12);
+    border-left: 4px solid #2dd4bf;
+    padding: 14px;
+    border-radius: 10px;
+}
 </style>
 """, unsafe_allow_html=True)
 
 # ======================================================
-# OPENAI CONFIG (SAFE)
+# OPENAI (STABLE)
 # ======================================================
+if "OPENAI_API_KEY" not in st.secrets:
+    st.error("OPENAI_API_KEY missing in Streamlit Secrets")
+    st.stop()
+
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 # ======================================================
-# LOAD DATA
+# LOAD DATA (SAFE)
 # ======================================================
 @st.cache_data
 def load_qa():
     df = pd.read_excel("legal_staircase.xlsx")
     df.columns = df.columns.str.lower().str.strip()
-    df = df.rename(columns={"question":"q","answer":"a"})
+    df = df.rename(columns={"question":"q", "answer":"a"})
     return df[["q","a"]]
 
 @st.cache_data
@@ -62,18 +85,15 @@ qa_df = load_qa()
 lan_df = load_lan()
 
 # ======================================================
-# EMBEDDINGS
+# EMBEDDINGS (RAG)
 # ======================================================
-def embed(texts):
-    res = openai.Embedding.create(
-        model="text-embedding-ada-002",
-        input=texts
-    )
-    return np.array([d["embedding"] for d in res["data"]], dtype=np.float32)
-
 @st.cache_data
 def build_embeddings():
-    return embed(qa_df["q"].tolist())
+    res = openai.Embedding.create(
+        model="text-embedding-ada-002",
+        input=qa_df["q"].tolist()
+    )
+    return np.array([d["embedding"] for d in res["data"]])
 
 qa_emb = build_embeddings()
 
@@ -86,54 +106,62 @@ def cosine(a,b):
 def agent_advice(context):
     prompt = f"""
 You are a senior NBFC collections manager.
-Give 3 compliant, polite agent actions based ONLY on this context:
+Give 3 compliant agent actions ONLY based on this policy text.
+Short, professional, actionable.
 
+Policy:
 {context}
 """
-    res = openai.ChatCompletion.create(
+    r = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=[{"role":"user","content":prompt}],
         temperature=0.2,
         max_tokens=120
     )
-    return res.choices[0].message["content"]
+    return r.choices[0].message.content
 
 # ======================================================
 # ANSWER ENGINE (STRICT RAG)
 # ======================================================
 def answer_query(query):
-    lan = re.search(r"\b\d{3,}\b", query)
-
-    if lan:
-        row = lan_df[lan_df["Lan Id"] == lan.group()]
+    # LAN FLOW
+    m = re.search(r"\b\d{3,}\b", query)
+    if m:
+        lan = m.group()
+        row = lan_df[lan_df.iloc[:,0] == lan]
         if not row.empty:
-            txt = row.iloc[0].to_string()
-            return txt, agent_advice(txt)
+            text = row.iloc[0].to_string()
+            return text, agent_advice(text)
 
-    qv = embed([query])[0]
-    sims = [cosine(qv,e) for e in qa_emb]
+    # LEGAL FLOW
+    q_vec = openai.Embedding.create(
+        model="text-embedding-ada-002",
+        input=[query]
+    )["data"][0]["embedding"]
+
+    sims = [cosine(q_vec, e) for e in qa_emb]
     idx = int(np.argmax(sims))
 
     if max(sims) < 0.30:
-        return "This query is not covered in the NBFC policy repository.", ""
+        return "This question is not covered in the NBFC legal repository.", ""
 
-    ans = qa_df.iloc[idx]["a"]
-    return ans, agent_advice(ans)
+    answer = qa_df.iloc[idx]["a"]
+    return answer, agent_advice(answer)
 
 # ======================================================
-# PDF
+# PDF DOWNLOAD
 # ======================================================
 def make_pdf(q,a,adv):
     buf = io.BytesIO()
     p = canvas.Canvas(buf, pagesize=letter)
-    p.drawString(40,750,"NBFC Legal Intelligence Summary")
-    p.drawString(40,730,f"Query: {q}")
-    p.drawString(40,700,"Answer:")
-    t = p.beginText(40,680)
-    for l in a.split("\n"): t.textLine(l)
+    p.drawString(50,750,"NBFC Legal Intelligence Summary")
+    p.drawString(50,730,f"Query: {q}")
+    t = p.beginText(50,700)
+    for l in a.split("\n"):
+        t.textLine(l)
     p.drawText(t)
-    p.drawString(40,520,"Agent Advice:")
-    p.drawString(40,500,adv[:250])
+    p.drawString(50,480,"Agent Advice:")
+    p.drawString(50,460,adv[:250])
     p.save()
     buf.seek(0)
     return buf
@@ -141,90 +169,62 @@ def make_pdf(q,a,adv):
 # ======================================================
 # HEADER
 # ======================================================
-st.markdown("<div class='hero'>Legal Intelligence Hub</div>", unsafe_allow_html=True)
-st.markdown("<div class='sub'>NBFC Legal Staircase • LAN Intelligence • Agent Guidance</div>", unsafe_allow_html=True)
-
-# ======================================================
-# 🔥 THREE BOXES (THIS WAS MISSING)
-# ======================================================
-c1,c2,c3 = st.columns(3)
-
-with c1:
-    st.markdown("""
-    <div class='bento'>
-    ⚖️ <b>Legal Staircase</b><br>
-    <span class='small'>SARFAESI, Section 138, Arbitration steps</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-with c2:
-    st.markdown("""
-    <div class='bento'>
-    🔍 <b>LAN Intelligence</b><br>
-    <span class='small'>Notice history, recovery stage, status</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-with c3:
-    st.markdown("""
-    <div class='bento'>
-    📞 <b>Communication</b><br>
-    <span class='small'>Compliant scripts & agent actions</span>
-    </div>
-    """, unsafe_allow_html=True)
+st.markdown('<div class="hero">Legal Intelligence Hub</div>', unsafe_allow_html=True)
+st.markdown('<div class="small">NBFC Legal Staircase • LAN Intelligence • Agent Communication</div>', unsafe_allow_html=True)
 
 # ======================================================
 # INTRO + HOW TO USE
 # ======================================================
-i1,i2 = st.columns(2)
-
-with i1:
+c1,c2 = st.columns(2)
+with c1:
     st.markdown("""
-    <div class='card'>
+    <div class="card">
     <b>What does this assistant do?</b>
-    <ul class='small'>
-    <li>Explains NBFC legal recovery stages</li>
-    <li>Interprets SARFAESI & Section 138</li>
-    <li>Fetches LAN-level status</li>
+    <ul class="small">
+    <li>Explains NBFC legal notices & recovery stages</li>
+    <li>Interprets SARFAESI, Section 138, Arbitration</li>
+    <li>Fetches LAN recovery status</li>
     <li>Suggests compliant agent actions</li>
     </ul>
     ⚠️ Operational guidance only.
     </div>
     """, unsafe_allow_html=True)
 
-with i2:
+with c2:
     st.markdown("""
-    <div class='card'>
+    <div class="card">
     <b>How to use</b>
-    <ul class='small'>
-    <li>Ask a legal question</li>
+    <ul class="small">
+    <li>Ask legal / collections questions</li>
     <li>Enter LAN ID (e.g. 22222)</li>
-    <li>Review answer & agent advice</li>
+    <li>Review system answer & agent advice</li>
     </ul>
     </div>
     """, unsafe_allow_html=True)
 
 # ======================================================
+# THREE FEATURE BOXES (FIXED)
+# ======================================================
+b1,b2,b3 = st.columns(3)
+b1.markdown("<div class='card'><b>⚖️ Legal Staircase</b><p class='small'>DPD-based recovery & notice flow</p></div>", unsafe_allow_html=True)
+b2.markdown("<div class='card'><b>🔍 LAN Intelligence</b><p class='small'>Account-level recovery status</p></div>", unsafe_allow_html=True)
+b3.markdown("<div class='card'><b>📞 Communication</b><p class='small'>Compliant agent scripts & actions</p></div>", unsafe_allow_html=True)
+
+# ======================================================
 # CHAT
 # ======================================================
-q = st.chat_input("Ask legal question or enter LAN ID")
+query = st.chat_input("Ask a legal question or enter LAN ID")
 
-if q:
-    ans, adv = answer_query(q)
-
-    a,b = st.columns([2,1])
-    with a:
-        st.markdown("<div class='answer'><b>System Answer</b><br>"+ans+"</div>", unsafe_allow_html=True)
-    with b:
+if query:
+    with st.spinner("Analyzing NBFC policy..."):
+        ans, adv = answer_query(query)
+        a,b = st.columns([2,1])
+        a.markdown("<div class='response'><b>System Answer</b><br>"+ans+"</div>", unsafe_allow_html=True)
         if adv:
-            st.markdown("<div class='agent'><b>Agent Advice</b><br>"+adv+"</div>", unsafe_allow_html=True)
+            b.markdown("<div class='agent'><b>Agent Advice</b><br>"+adv+"</div>", unsafe_allow_html=True)
 
-    st.download_button(
-        "📄 Download Summary",
-        data=make_pdf(q,ans,adv),
-        file_name="nbfc_summary.pdf",
-        mime="application/pdf"
-    )
+        pdf = make_pdf(query, ans, adv)
+        st.download_button("📄 Download Summary", pdf, "nbfc_summary.pdf", "application/pdf")
 
 # ======================================================
 # FOOTER
@@ -232,6 +232,6 @@ if q:
 st.markdown("""
 <hr>
 <p style='text-align:center;color:#64748b;font-size:0.8rem'>
-Designed by <b>Mohit Raheja</b> | Applied AI – NBFC Collections
+Designed by <b>Mohit Raheja</b> | NBFC Legal Intelligence
 </p>
 """, unsafe_allow_html=True)
