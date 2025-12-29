@@ -1,220 +1,255 @@
 import os
 import re
 import pickle
-import io
 import numpy as np
 import pandas as pd
 import streamlit as st
 import openai
 from datetime import datetime
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
 
 # ======================================================
 # PAGE CONFIG
 # ======================================================
 st.set_page_config(
-    page_title="NBFC Legal Intelligence Hub",
+    page_title="NBFC Legal & Collections Intelligence Assistant",
     page_icon="🛡️",
-    layout="wide"
+    layout="wide",
 )
 
 # ======================================================
-# OPENAI CONFIG
-# ======================================================
-openai.api_key = st.secrets["OPENAI_API_KEY"]
-
-# ======================================================
-# FILES
-# ======================================================
-QA_FILE = "legal_staircase.xlsx"
-LAN_FILE = "lan_data.xlsx"
-EMBED_CACHE = "qa_embeddings_v3.pkl"
-
-# ======================================================
-# STYLING
+# ADVANCED UI CSS
 # ======================================================
 st.markdown("""
 <style>
-.stApp { background: radial-gradient(circle at top left, #0f172a, #020617); color: #f8fafc; }
-.card { background: rgba(255,255,255,0.04); padding: 18px; border-radius: 14px; margin-bottom: 16px; }
-.small { color:#94a3b8; font-size:14px; }
-.highlight { border-left:4px solid #3b82f6; padding-left:14px; }
-.action { background: rgba(34,197,94,0.12); padding:12px; border-radius:10px; margin-top:8px; }
+.stApp {
+    background: radial-gradient(circle at top left, #1e293b, #0f172a);
+    color: #f8fafc;
+}
+.bento-card {
+    background: rgba(255,255,255,0.04);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 16px;
+}
+.hero-text {
+    font-size: 2.6rem;
+    font-weight: 800;
+    background: linear-gradient(90deg, #3b82f6, #2dd4bf);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.sub-text {
+    color: #94a3b8;
+    font-size: 1.05rem;
+}
+.response-box {
+    background: rgba(15,23,42,0.75);
+    border-left: 4px solid #3b82f6;
+    border-radius: 12px;
+    padding: 18px;
+}
+.agent-box {
+    background: rgba(45,212,191,0.08);
+    border-left: 4px solid #2dd4bf;
+    border-radius: 12px;
+    padding: 14px;
+}
+.small {
+    font-size: 0.9rem;
+    color: #cbd5f5;
+}
 </style>
 """, unsafe_allow_html=True)
 
 # ======================================================
-# SIDEBAR
+# OPENAI CONFIG (stable)
 # ======================================================
-with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/1055/1055644.png", width=70)
-    st.markdown("## Intel Center")
+if "OPENAI_API_KEY" not in st.secrets:
+    st.error("OPENAI_API_KEY missing")
+    st.stop()
 
-    st.markdown("""
-    <div class="small">
-    <b>What does this assistant do?</b><br><br>
-    • Explains NBFC legal notices and recovery stages<br>
-    • Interprets SARFAESI, Section 138 & arbitration steps<br>
-    • Fetches LAN-level recovery status<br>
-    • Suggests compliant customer communication<br><br>
-    ⚠️ For operational guidance only. Not legal advice.
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("---")
-
-    st.markdown("""
-    <div class="small">
-    <b>ℹ️ How to use</b><br><br>
-    • Ask a legal or collections question<br>
-    • Enter a LAN ID (e.g. 22222)<br>
-    • Review system response and agent suggestions
-    </div>
-    """, unsafe_allow_html=True)
+openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 # ======================================================
-# HEADER
+# FILE PATHS
 # ======================================================
-st.markdown("""
-<div class="card">
-<h1 style="color:#60a5fa;">Legal Intelligence Hub</h1>
-<p class="small">Advanced decision-support for NBFC collections and legal risk mitigation.</p>
-</div>
-""", unsafe_allow_html=True)
+QA_FILE = "legal_staircase.xlsx"
+LAN_FILE = "lan_data.xlsx"
+EMBED_CACHE = "qa_embeddings.pkl"
 
 # ======================================================
-# FEATURE BOXES
+# HELPERS
 # ======================================================
-c1, c2, c3 = st.columns(3)
+def cosine(a, b):
+    denom = np.linalg.norm(a) * np.linalg.norm(b)
+    return float(np.dot(a, b) / denom) if denom else 0.0
 
-with c1:
-    st.markdown("""
-    <div class="card">
-    <h4>⚖️ Legal Staircase</h4>
-    <p class="small">NBFC recovery lifecycle: Demand → Possession → Auction → Legal.</p>
-    </div>
-    """, unsafe_allow_html=True)
+def chat(prompt):
+    resp = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role":"user","content":prompt}],
+        temperature=0.2,
+        max_tokens=250
+    )
+    return resp.choices[0].message["content"].strip()
 
-with c2:
-    st.markdown("""
-    <div class="card">
-    <h4>🔍 LAN Intelligence</h4>
-    <p class="small">Fetch notice status, business vertical, and recovery stage using LAN.</p>
-    </div>
-    """, unsafe_allow_html=True)
+def embed(texts):
+    resp = openai.Embedding.create(
+        model="text-embedding-ada-002",
+        input=texts
+    )
+    return [d["embedding"] for d in resp["data"]]
 
-with c3:
-    st.markdown("""
-    <div class="card">
-    <h4>📞 Communication</h4>
-    <p class="small">AI-generated compliant agent scripts & action guidance.</p>
-    </div>
-    """, unsafe_allow_html=True)
+def is_general_question(q):
+    keywords = ["capital","define","what is","who is","history","country","india"]
+    ql = q.lower()
+    return any(k in ql for k in keywords)
 
 # ======================================================
-# DATA LOAD
+# LOAD DATA
 # ======================================================
 @st.cache_data
 def load_qa():
     df = pd.read_excel(QA_FILE)
-    df.columns = df.columns.str.lower().str.strip()
-    return df
+    df.columns = df.columns.str.strip().str.lower()
+    df = df.rename(columns={
+        "question":"Question",
+        "questions":"Question",
+        "answer":"Answer",
+        "answers":"Answer",
+        "business":"Business"
+    })
+    df["id"] = range(len(df))
+    return df[["id","Question","Answer","Business"]]
 
 @st.cache_data
 def load_lan():
-    return pd.read_excel(LAN_FILE, dtype=str)
+    df = pd.read_excel(LAN_FILE, dtype=str)
+    df["Notice Sent Date"] = pd.to_datetime(df["Notice Sent Date"], errors="coerce")
+    return df
 
-def embed(texts):
-    res = openai.Embedding.create(model="text-embedding-ada-002", input=texts)
-    return [d["embedding"] for d in res["data"]]
+def build_embeddings():
+    qa_df = load_qa()
+    if os.path.exists(EMBED_CACHE):
+        try:
+            with open(EMBED_CACHE,"rb") as f:
+                saved = pickle.load(f)
+            if saved.get("len")==len(qa_df):
+                return qa_df, saved["emb"]
+        except:
+            pass
 
-def chat(prompt):
-    res = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role":"user","content":prompt}],
-        temperature=0.2
-    )
-    return res.choices[0].message["content"]
+    corpus = [q+" || "+a for q,a in zip(qa_df["Question"],qa_df["Answer"])]
+    emb = np.array(embed(corpus), dtype=np.float32)
+    with open(EMBED_CACHE,"wb") as f:
+        pickle.dump({"emb":emb,"len":len(qa_df)},f)
+    return qa_df, emb
 
-qa_df = load_qa()
+qa_df, qa_emb = build_embeddings()
 lan_df = load_lan()
 
 # ======================================================
-# ROUTING LOGIC (FIXES STAIRCASE BUG)
+# CORE ANSWER LOGIC
 # ======================================================
-def is_general_finance(q):
-    keywords = ["capital", "economy", "consumer finance", "credit", "banking"]
-    return any(k in q.lower() for k in keywords)
-
 def answer_query(query):
-    # LAN
-    m = re.search(r"\b\d{3,}\b", query)
-    if m:
-        row = lan_df[lan_df["Lan Id"] == m.group()]
+    # LAN routing
+    lan_match = re.search(r"\b\d{3,}\b", query)
+    if lan_match:
+        lan_id = lan_match.group(0)
+        row = lan_df[lan_df["Lan Id"]==lan_id]
         if not row.empty:
             r = row.iloc[0]
-            ans = f"LAN {m.group()} is in **{r['Status']}** stage under **{r['Business']}**."
-            tips = chat(f"Give 3 compliant agent suggestions for: {ans}")
+            ans = f"LAN {lan_id} is in **{r['Status']}** stage under **{r['Business']}**."
+            tips = chat(f"Give 3 compliant collection call suggestions for:\n{ans}")
             return ans, tips
 
-    # Legal staircase (Excel)
-    if "staircase" in query.lower() or "sarfaesi" in query.lower():
-        return qa_df.iloc[0]["answer"], chat("Give agent steps for legal staircase")
+    # General knowledge
+    if is_general_question(query):
+        return chat(query), ""
 
-    # General finance → OpenAI
-    if is_general_finance(query):
-        return chat(query), "No agent action required."
+    # RAG
+    q_vec = embed([query])[0]
+    sims = [cosine(q_vec,e) for e in qa_emb]
+    best_idx = int(np.argmax(sims))
 
-    return chat(query), chat("Give compliant agent suggestions.")
+    if max(sims)<0.35:
+        return chat(query), ""
+
+    best_ans = qa_df.iloc[best_idx]["Answer"]
+    tips = chat(f"Give 3 compliant agent suggestions based on:\n{best_ans}")
+    return best_ans, tips
 
 # ======================================================
-# QUERY INPUT
+# HERO
+# ======================================================
+st.markdown('<div class="hero-text">Legal Intelligence Hub</div>', unsafe_allow_html=True)
+st.markdown('<p class="sub-text">Decision-support system for NBFC collections & compliance</p>', unsafe_allow_html=True)
+
+# ======================================================
+# INTRO + HOW TO USE
+# ======================================================
+i1,i2 = st.columns([2,1])
+with i1:
+    st.markdown("""
+    <div class="bento-card">
+    <b>What does this assistant do?</b>
+    <ul class="small">
+    <li>Explains NBFC legal notices & recovery stages</li>
+    <li>Interprets SARFAESI, Section 138 & arbitration</li>
+    <li>Fetches LAN-level recovery status</li>
+    <li>Suggests compliant customer communication</li>
+    </ul>
+    ⚠️ For operational guidance only. Not legal advice.
+    </div>
+    """, unsafe_allow_html=True)
+
+with i2:
+    st.markdown("""
+    <div class="bento-card">
+    <b>ℹ️ How to use</b>
+    <ul class="small">
+    <li>Ask a legal / collections question</li>
+    <li>Enter a LAN ID (e.g. 22222)</li>
+    <li>Review system response & agent suggestions</li>
+    </ul>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ======================================================
+# THREE CORE BOXES
+# ======================================================
+c1,c2,c3 = st.columns(3)
+with c1:
+    st.markdown('<div class="bento-card"><b>⚖️ Legal Staircase</b><br><span class="small">Structured recovery steps & notices</span></div>', unsafe_allow_html=True)
+with c2:
+    st.markdown('<div class="bento-card"><b>🔍 LAN Intelligence</b><br><span class="small">Account-level recovery insights</span></div>', unsafe_allow_html=True)
+with c3:
+    st.markdown('<div class="bento-card"><b>📞 Communication</b><br><span class="small">Audit-safe agent scripts</span></div>', unsafe_allow_html=True)
+
+# ======================================================
+# CHAT
 # ======================================================
 query = st.chat_input("Ask a legal question or enter LAN ID")
 
 if query:
-    answer, tips = answer_query(query)
+    with st.spinner("Analyzing..."):
+        answer, tips = answer_query(query)
 
-    st.markdown("""
-    <div class="card highlight">
-    <h3>🧠 System Response</h3>
-    <p>{}</p>
-    </div>
-    """.format(answer), unsafe_allow_html=True)
-
-    st.markdown("""
-    <div class="card">
-    <h4>🎧 Agent Suggestions</h4>
-    <div class="action">{}</div>
-    </div>
-    """.format(tips), unsafe_allow_html=True)
-
-    # ==================================================
-    # PDF DOWNLOAD
-    # ==================================================
-    buffer = io.BytesIO()
-    pdf = canvas.Canvas(buffer, pagesize=A4)
-    pdf.drawString(40, 800, "NBFC Legal Intelligence Report")
-    pdf.drawString(40, 780, f"Query: {query}")
-    pdf.drawString(40, 760, f"Answer: {answer}")
-    pdf.drawString(40, 720, f"Agent Suggestions: {tips}")
-    pdf.save()
-    buffer.seek(0)
-
-    st.download_button(
-        "📄 Download Summary (PDF)",
-        data=buffer,
-        file_name="NBFC_Legal_Response.pdf",
-        mime="application/pdf"
-    )
+    colA,colB = st.columns([2,1])
+    with colA:
+        st.markdown('<div class="response-box"><b>💡 System Response</b><br><br>'+answer+'</div>', unsafe_allow_html=True)
+    with colB:
+        if tips:
+            st.markdown('<div class="agent-box"><b>🎧 Agent Suggestions</b><br>'+tips+'</div>', unsafe_allow_html=True)
 
 # ======================================================
 # FOOTER
 # ======================================================
 st.markdown("""
 <hr>
-<p class="small" style="text-align:center;">
+<p style="text-align:center; color:#94a3b8; font-size:0.85rem;">
 Created by <b>Mohit Raheja</b> | Applied AI & Decision Intelligence
 </p>
 """, unsafe_allow_html=True)
