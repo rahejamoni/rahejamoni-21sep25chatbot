@@ -51,19 +51,36 @@ legal processes, loan status, and compliant recovery actions
 # ======================================================
 # INTRODUCTION
 # ======================================================
-st.markdown("""
-<div class="card">
-<h3>🔍 What does this assistant do?</h3>
-<ul class="small-text">
-<li>Explains NBFC legal notices (Pre-sale, Auction, Possession, etc.)</li>
-<li>Identifies recovery status using Loan Account Number (LAN)</li>
-<li>Guides agents on compliance timelines</li>
-<li>Answers general knowledge questions when applicable</li>
-<li>Suggests polite, compliant customer communication</li>
-</ul>
-<p class="small-text">⚠️ This tool assists agents and does not replace legal advice.</p>
-</div>
-""", unsafe_allow_html=True)
+col_left, col_right = st.columns(2)
+
+with col_left:
+    st.markdown("""
+    <div class="card">
+    <h3>🔍 What does this assistant do?</h3>
+    <ul class="small-text">
+        <li>Explains NBFC legal notices (Pre-sale, Auction, Possession, etc.)</li>
+        <li>Identifies recovery status using Loan Account Number (LAN)</li>
+        <li>Guides agents on compliance timelines</li>
+        <li>Answers general knowledge questions when applicable</li>
+        <li>Suggests polite, compliant customer communication</li>
+    </ul>
+    <p class="small-text">⚠️ This tool assists agents and does not replace legal advice.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col_right:
+    st.markdown("""
+    <div class="card">
+    <h3>ℹ️ How to use</h3>
+    <ul class="small-text">
+        <li>Ask NBFC legal or collections-related questions</li>
+        <li>Enter a LAN ID to check recovery status</li>
+        <li>Ask general questions (capital, definitions, etc.)</li>
+        <li>Review suggested compliant agent responses</li>
+    </ul>
+    </div>
+    """, unsafe_allow_html=True)
+
 
 # ======================================================
 # CONFIG
