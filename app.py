@@ -21,194 +21,177 @@ st.set_page_config(
 )
 
 # ======================================================
-# CSS – COMPACT, APP-LIKE UI
+# ADVANCED CSS - MIDNIGHT GOLD THEME
 # ======================================================
 st.markdown("""
 <style>
+/* Global Styles */
 .stApp {
-    background: radial-gradient(circle at top left, #0f172a, #020617);
-    color: #e5e7eb;
+    background: linear-gradient(135deg, #040911 0%, #0a192f 100%);
+    color: #e6f1ff;
 }
+
+/* Typography */
 .hero-text {
-    font-size: 2.4rem;
-    font-weight: 800;
-    background: linear-gradient(90deg, #60a5fa, #34d399);
+    font-size: 3rem;
+    font-weight: 850;
+    background: linear-gradient(90deg, #e1b12c, #fbc531);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
+    letter-spacing: -1px;
 }
+
 .sub-text {
-    color: #94a3b8;
-    margin-bottom: 18px;
+    color: #8892b0;
+    font-size: 1.1rem;
+    margin-bottom: 30px;
+    font-weight: 300;
 }
+
+/* Bento Cards */
 .card {
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 14px;
-    padding: 16px;
-    margin-bottom: 14px;
+    background: rgba(17, 34, 64, 0.6);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(100, 255, 218, 0.1);
+    border-radius: 16px;
+    padding: 24px;
+    transition: all 0.3s ease;
 }
-.small {
-    font-size: 0.85rem;
-    color: #9ca3af;
+.card:hover {
+    border: 1px solid rgba(225, 177, 44, 0.4);
+    transform: translateY(-2px);
 }
+
+/* Interpretation & Suggestions */
 .answer-card {
-    background: rgba(2,6,23,0.8);
-    border-left: 4px solid #60a5fa;
-    border-radius: 12px;
-    padding: 18px;
+    background: rgba(10, 25, 47, 0.9);
+    border-radius: 16px;
+    padding: 25px;
+    border: 1px solid #112240;
+    box-shadow: 0 10px 30px -15px rgba(2, 12, 27, 0.7);
 }
-.agent-card {
-    background: rgba(16,185,129,0.08);
-    border-left: 4px solid #34d399;
-    border-radius: 12px;
-    padding: 16px;
+
+.agent-header {
+    color: #fbc531;
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
 }
-.step {
-    background: rgba(255,255,255,0.05);
-    padding: 10px;
-    border-radius: 8px;
-    margin-bottom: 8px;
+
+.step-box {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 12px;
+    border-left: 3px solid #e1b12c;
+}
+
+/* Download Button Styling */
+.stDownloadButton button {
+    background-color: transparent !important;
+    color: #fbc531 !important;
+    border: 1px solid #fbc531 !important;
+    padding: 10px 24px !important;
+    border-radius: 8px !important;
+    transition: 0.3s !important;
+}
+.stDownloadButton button:hover {
+    background-color: rgba(225, 177, 44, 0.1) !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # ======================================================
-# HEADER
+# HEADER SECTION
 # ======================================================
-st.markdown('<div class="hero-text">NBFC Legal & Collections Intelligence Hub</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-text">AI decision-support system for compliant NBFC recovery operations</div>', unsafe_allow_html=True)
+st.markdown('<div class="hero-text">Intelligence Hub</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-text">Strategic Decision-Support for NBFC Collections & Compliance</div>', unsafe_allow_html=True)
+
+# Dashboard Feature Icons
+col_f1, col_f2, col_f3 = st.columns(3)
+with col_f1:
+    st.markdown('<div class="card"><b>⚖️ Regulatory Guard</b><br><span style="font-size:0.8rem; color:#8892b0;">Ensures all actions align with RBI recovery guidelines.</span></div>', unsafe_allow_html=True)
+with col_f2:
+    st.markdown('<div class="card"><b>🔍 Direct Retrieval</b><br><span style="font-size:0.8rem; color:#8892b0;">Real-time LAN status mapping and legal history.</span></div>', unsafe_allow_html=True)
+with col_f3:
+    st.markdown('<div class="card"><b>🗣️ Script Intelligence</b><br><span style="font-size:0.8rem; color:#8892b0;">Dynamic agent scripts for high-conversion negotiations.</span></div>', unsafe_allow_html=True)
+
+st.write(" ")
 
 # ======================================================
-# QUICK INFO ROW (NO DUPLICATION)
-# ======================================================
-info_l, info_r = st.columns([2, 1])
-
-with info_l:
-    st.markdown("""
-    <div class="card">
-    <b>🔍 What does this assistant do?</b>
-    <ul class="small">
-        <li>Explains NBFC legal notices & recovery staircase</li>
-        <li>Fetches LAN-based recovery status</li>
-        <li>Provides compliant calling guidance</li>
-    </ul>
-    <span class="small">⚠️ Operational guidance only. Not legal advice.</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-with info_r:
-    st.markdown("""
-    <div class="card">
-    <b>⚡ Quick guide</b>
-    <ul class="small">
-        <li>Ask legal / collections questions</li>
-        <li>Enter LAN ID (e.g. 22222)</li>
-        <li>Review agent action steps</li>
-    </ul>
-    </div>
-    """, unsafe_allow_html=True)
-
-# ======================================================
-# CHAT INPUT (VISIBLE IMMEDIATELY)
-# ======================================================
-query = st.chat_input("Ask a legal question or enter LAN ID…")
-
-# ======================================================
-# MOCK LOGIC (REPLACE WITH YOUR REAL RAG / LAN LOGIC)
+# CORE LOGIC (MOCK)
 # ======================================================
 def get_system_answer(q):
-    # Replace this with your existing RAG + LAN logic
+    # Place your actual RAG/Excel logic here
     return (
-        "The staircase of consumer finance refers to progressive recovery stages "
-        "starting from soft reminders, legal notices, asset possession, and finally auction."
+        "Under Section 138 of the NI Act, a demand notice must be served within 30 days of "
+        "cheque dishonor. The borrower then has 15 days to settle the payment before "
+        "a criminal complaint can be filed in the jurisdictional court."
     )
 
 def get_agent_suggestions(q):
-    # Replace with your LLM-based agent strategy function
     return [
-        "Verify the current DPD and last payment date before initiating discussion.",
-        "Clearly explain the next legal step while maintaining a calm and respectful tone.",
-        "Offer a short settlement window to prevent escalation."
+        "Confirm if the customer received the physical notice via Speed Post tracking.",
+        "Inform the customer that a 'Civil Settlement' is still possible before court filing.",
+        "Document the customer's refusal or promise-to-pay (PTP) in the CRM immediately."
     ]
 
 # ======================================================
-# RESPONSE SECTION (ANSWER + AGENT SUGGESTIONS SIDE BY SIDE)
+# INTERACTION ZONE
 # ======================================================
+query = st.chat_input("Enter LAN ID or ask a recovery question...")
+
 if query:
     answer = get_system_answer(query)
     agent_steps = get_agent_suggestions(query)
 
-    ans_col, agent_col = st.columns([2, 1])
+    # Main Grid for Results
+    res_col, side_col = st.columns([2, 1])
 
-    with ans_col:
-        st.markdown("""
+    with res_col:
+        st.markdown(f"""
         <div class="answer-card">
-        <b>🧠 System Interpretation</b>
-        <p style="margin-top:10px; line-height:1.55; font-size:0.95rem;">
-        """ + answer + """
-        </p>
+            <h4 style="color:#ccd6f6; margin-top:0;">💡 Intelligence Output</h4>
+            <p style="color:#8892b0; font-size:1.05rem; line-height:1.7;">{answer}</p>
         </div>
         """, unsafe_allow_html=True)
 
-    with agent_col:
-        st.markdown("""
-        <div class="agent-card">
-        <b>🎧 Agent Suggestions</b>
-        """, unsafe_allow_html=True)
-
+    with side_col:
+        st.markdown('<div class="agent-header">⚡ Agent Action Plan</div>', unsafe_allow_html=True)
         for i, step in enumerate(agent_steps, 1):
             st.markdown(f"""
-            <div class="step">
-            <b>Step {i}:</b> {step}
+            <div class="step-box">
+                <span style="color:#fbc531; font-weight:bold; margin-right:8px;">0{i}</span>
+                <span style="font-size:0.9rem;">{step}</span>
             </div>
             """, unsafe_allow_html=True)
+        
+        # PDF Generation & Download
+        def generate_pdf(q, a, s):
+            buffer = io.BytesIO()
+            p = canvas.Canvas(buffer, pagesize=letter)
+            p.setFont("Helvetica-Bold", 16)
+            p.drawString(50, 750, "NBFC LEGAL ADVISORY REPORT")
+            p.setFont("Helvetica", 12)
+            p.drawString(50, 730, f"Query: {q}")
+            p.line(50, 720, 550, 720)
+            p.showPage()
+            p.save()
+            buffer.seek(0)
+            return buffer
 
-        st.markdown("</div>", unsafe_allow_html=True)
-
-# ======================================================
-# OPTIONAL PDF EXPORT (KEEP OR REMOVE)
-# ======================================================
-def generate_pdf(query, answer, steps):
-    buffer = io.BytesIO()
-    p = canvas.Canvas(buffer, pagesize=letter)
-    width, height = letter
-
-    p.setFont("Helvetica-Bold", 14)
-    p.drawString(50, height - 50, "NBFC LEGAL INTELLIGENCE SUMMARY")
-
-    p.setFont("Helvetica", 10)
-    p.drawString(50, height - 70, f"Query: {query}")
-
-    text = p.beginText(50, height - 100)
-    text.setLeading(14)
-    text.textLine("System Interpretation:")
-    text.textLine(answer)
-    text.textLine("")
-    text.textLine("Agent Suggestions:")
-    for s in steps:
-        text.textLine(f"- {s}")
-
-    p.drawText(text)
-    p.showPage()
-    p.save()
-    buffer.seek(0)
-    return buffer
-
-if query:
-    pdf = generate_pdf(query, answer, agent_steps)
-    st.download_button(
-        "📄 Download Summary (PDF)",
-        pdf,
-        file_name="NBFC_Intelligence_Report.pdf",
-        mime="application/pdf"
-    )
+        pdf = generate_pdf(query, answer, agent_steps)
+        st.download_button("📄 Export to PDF", pdf, file_name="NBFC_Advisor.pdf")
 
 # ======================================================
 # FOOTER
 # ======================================================
 st.markdown("""
-<hr>
-<p style="text-align:center; font-size:0.8rem; color:#9ca3af;">
-Created by <b>Mohit Raheja</b> | Applied AI & Decision Intelligence
-</p>
+<div style="margin-top: 100px; text-align:center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 20px;">
+    <p style="color: #495670; font-size: 0.85rem;">
+        <b>Mohit Raheja</b> | Applied AI Division | Secure Enterprise Intelligence
+    </p>
+</div>
 """, unsafe_allow_html=True)
