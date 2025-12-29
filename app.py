@@ -69,21 +69,23 @@ st.markdown("""
 # ======================================================
 # CONFIG
 # ======================================================
-OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY")
-
+# ======================================================
+# CONFIG
+# ======================================================
 QA_FILE = "legal_staircase.xlsx"
 LAN_FILE = "lan_data.xlsx"
 
 EMBED_CACHE = "qa_embeddings_v2.pkl"
-EMBED_MODEL = "text-embedding-3-small"
-CHAT_MODEL = "gpt-4o-mini"
 
-if not OPENAI_API_KEY:
+# OpenAI (stable SDK)
+import openai
+
+if "OPENAI_API_KEY" not in st.secrets:
     st.error("OPENAI_API_KEY missing in Streamlit Secrets.")
     st.stop()
 
-#client = OpenAI(api_key=OPENAI_API_KEY)
-client = OpenAI()
+openai.api_key = st.secrets["OPENAI_API_KEY"]
+
 
 
 # ======================================================
