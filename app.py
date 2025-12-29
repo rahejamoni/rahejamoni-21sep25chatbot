@@ -238,20 +238,67 @@ lan_df = load_lan()
 # ======================================================
 # INPUT UI
 # ======================================================
-st.markdown('<div class="card"><h3>💬 Ask a Question</h3></div>', unsafe_allow_html=True)
+left_col, right_col = st.columns([2, 1])
 
-query = st.text_input(
-    "",
-    placeholder="e.g. What is a pre-sale notice? | What is the capital of India? | Enter LAN ID"
-)
+# ================= LEFT COLUMN =================
+with left_col:
+    st.markdown('<div class="card"><h3>💬 Ask a Question</h3></div>', unsafe_allow_html=True)
 
-if st.button("🚀 Submit"):
-    if query.strip():
-        answer, tips = answer_query(query)
+    query = st.text_input(
+        "",
+        placeholder="e.g. What is a pre-sale notice? | What is the capital of India? | Enter LAN ID"
+    )
 
-        st.markdown('<div class="card"><h3>🧠 System Response</h3></div>', unsafe_allow_html=True)
-        st.success(answer)
+    if st.button("🚀 Submit"):
+        if query.strip():
+            answer, tips = answer_query(query)
 
-        if tips:
-            st.markdown('<div class="card"><h3>🎧 Agent Compliance Suggestions</h3></div>', unsafe_allow_html=True)
-            st.warning(tips)
+            st.markdown('<div class="card"><h3>🧠 System Response</h3></div>', unsafe_allow_html=True)
+            st.success(answer)
+
+            if tips:
+                st.markdown('<div class="card"><h3>🎧 Agent Compliance Suggestions</h3></div>', unsafe_allow_html=True)
+                st.warning(tips)
+
+# ================= RIGHT COLUMN =================
+with right_col:
+    st.markdown("""
+    <div class="card">
+    <h4>ℹ️ How to use</h4>
+    <ul class="small-text">
+        <li>Ask NBFC legal questions</li>
+        <li>Enter LAN ID to check recovery status</li>
+        <li>Ask general questions (capital, definitions, etc.)</li>
+    </ul>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="card">
+    <h4>🧪 Example Queries</h4>
+    <ul class="small-text">
+        <li>What is a pre-sale notice?</li>
+        <li>What is the capital of India?</li>
+        <li>123456789</li>
+    </ul>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="card">
+    <h4>⚙️ System Capabilities</h4>
+    <ul class="small-text">
+        <li>Domain-specific legal RAG</li>
+        <li>LAN-based decision logic</li>
+        <li>General LLM fallback</li>
+        <li>Compliance-safe suggestions</li>
+    </ul>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("""
+<hr>
+<p style="text-align:center; color:#9ba3af; font-size:14px;">
+Created by <b>Mohit Raheja</b> | AI & Data Science Project
+</p>
+""", unsafe_allow_html=True)
