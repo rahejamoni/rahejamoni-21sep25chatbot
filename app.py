@@ -4,9 +4,7 @@ import pickle
 import numpy as np
 import pandas as pd
 import streamlit as st
-#from openai import OpenAI
 import openai
-
 
 # ======================================================
 # PAGE CONFIG
@@ -18,7 +16,7 @@ st.set_page_config(
 )
 
 # ======================================================
-# CUSTOM CSS
+# BASIC CSS (VISIBLE UI CHANGE)
 # ======================================================
 st.markdown("""
 <style>
@@ -69,24 +67,15 @@ st.markdown("""
 # ======================================================
 # CONFIG
 # ======================================================
-# ======================================================
-# CONFIG
-# ======================================================
 QA_FILE = "legal_staircase.xlsx"
 LAN_FILE = "lan_data.xlsx"
-
 EMBED_CACHE = "qa_embeddings_v2.pkl"
-
-# OpenAI (stable SDK)
-import openai
 
 if "OPENAI_API_KEY" not in st.secrets:
     st.error("OPENAI_API_KEY missing in Streamlit Secrets.")
     st.stop()
 
 openai.api_key = st.secrets["OPENAI_API_KEY"]
-
-
 
 # ======================================================
 # UTILITIES
@@ -96,29 +85,29 @@ def cosine(a, b):
     return float(np.dot(a, b) / denom) if denom else 0.0
 
 def chat(prompt):
-    res = client.chat.completions.create(
-        model=CHAT_MODEL,
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
         max_tokens=200
     )
-    return res.choices[0].message.content.strip()
+    return response.choices[0].message["content"].strip()
 
 def embed(texts):
-    res = client.embeddings.create(model=EMBED_MODEL, input=texts)
-    return [d.embedding for d in res.data]
+    response = openai.Embedding.create(
+        model="text-embedding-ada-002",
+        input=texts
+    )
+    return [d["embedding"] for d in response["data"]]
 
 # ======================================================
-# LOAD LEGAL QA (SAFE VERSION)
+# LOAD LEGAL QA (SAFE)
 # ======================================================
 @st.cache_data
 def load_qa():
     df = pd.read_excel(QA_FILE)
-
-    # Normalize column names
     df.columns = df.columns.str.strip().str.lower()
 
-    # Flexible mapping
     rename_map = {
         "question": "Question",
         "questions": "Question",
@@ -127,21 +116,19 @@ def load_qa():
         "business": "Business",
         "vertical": "Business"
     }
-
     df = df.rename(columns=rename_map)
 
     required = {"Question", "Answer", "Business"}
     missing = required - set(df.columns)
-
     if missing:
-        st.error(f"Missing required columns in legal_staircase.xlsx: {missing}")
+        st.error(f"Missing columns in legal_staircase.xlsx: {missing}")
         st.stop()
 
     df["id"] = range(len(df))
     return df[["id", "Question", "Answer", "Business"]]
 
 # ======================================================
-# LOAD LAN DATA (SAFE VERSION)
+# LOAD LAN DATA (SAFE)
 # ======================================================
 @st.cache_data
 def load_lan():
@@ -150,9 +137,8 @@ def load_lan():
 
     required = {"Lan Id", "Status", "Business", "Notice Sent Date"}
     missing = required - set(df.columns)
-
     if missing:
-        st.error(f"Missing required columns in lan_data.xlsx: {missing}")
+        st.error(f"Missing columns in lan_data.xlsx: {missing}")
         st.stop()
 
     df["Lan Id"] = df["Lan Id"].astype(str).str.strip()
@@ -162,16 +148,20 @@ def load_lan():
     return df
 
 # ======================================================
-# BUILD EMBEDDINGS
+# BUILD / LOAD EMBEDDINGS (SAFE CACHE)
 # ======================================================
 def build_embeddings():
     qa_df = load_qa()
 
     if os.path.exists(EMBED_CACHE):
-        with open(EMBED_CACHE, "rb") as f:
-            saved = pickle.load(f)
-        if saved.get("len") == len(qa_df):
-            return qa_df, saved["emb"]
+        try:
+            with open(EMBED_CACHE, "rb") as f:
+                saved = pickle.load(f)
+            if isinstance(saved, dict) and "emb" in saved:
+                if saved.get("len") == len(qa_df):
+                    return qa_df, saved["emb"]
+        except Exception:
+            pass
 
     corpus = [q + " || " + a for q, a in zip(qa_df["Question"], qa_df["Answer"])]
     emb = np.array(embed(corpus), dtype=np.float32)
@@ -185,20 +175,19 @@ def build_embeddings():
 # MAIN ANSWER LOGIC
 # ======================================================
 def answer_query(query):
-    # Check LAN
+    # LAN lookup
     lan_match = re.search(r"\b\d{3,}\b", query)
     if lan_match:
         lan_id = lan_match.group(0)
         row = lan_df[lan_df["Lan Id"] == lan_id]
-
         if not row.empty:
             r = row.iloc[0]
             date = r["Notice Sent Date"]
-            date_str = date.strftime("%d-%m-%Y") if pd.notna(date) else "N/A"
+            d = date.strftime("%d-%m-%Y") if pd.notna(date) else "N/A"
 
             answer = (
                 f"LAN {lan_id} belongs to **{r['Business']}** vertical. "
-                f"Current status is **{r['Status']}**, notice sent on **{date_str}**."
+                f"Current status is **{r['Status']}**, notice sent on **{d}**."
             )
 
             tips = chat(
@@ -206,7 +195,7 @@ def answer_query(query):
             )
             return answer, tips
 
-    # Legal question
+    # Legal Q&A
     q_vec = embed([query])[0]
     sims = [cosine(q_vec, e) for e in qa_emb]
     best_answer = qa_df.iloc[int(np.argmax(sims))]["Answer"]
