@@ -58,6 +58,7 @@ st.markdown("""
 <li>Explains NBFC legal notices (Pre-sale, Auction, Possession, etc.)</li>
 <li>Identifies recovery status using Loan Account Number (LAN)</li>
 <li>Guides agents on compliance timelines</li>
+<li>Answers general knowledge questions when applicable</li>
 <li>Suggests polite, compliant customer communication</li>
 </ul>
 <p class="small-text">⚠️ This tool assists agents and does not replace legal advice.</p>
@@ -99,6 +100,18 @@ def embed(texts):
         input=texts
     )
     return [d["embedding"] for d in response["data"]]
+
+# ======================================================
+# QUESTION TYPE DETECTOR (HYBRID ROUTING)
+# ======================================================
+def is_general_question(query: str) -> bool:
+    keywords = [
+        "capital", "prime minister", "president", "population",
+        "country", "india", "delhi", "weather", "define",
+        "who is", "what is", "history", "math"
+    ]
+    q = query.lower()
+    return any(k in q for k in keywords)
 
 # ======================================================
 # LOAD LEGAL QA (SAFE)
@@ -172,10 +185,10 @@ def build_embeddings():
     return qa_df, emb
 
 # ======================================================
-# MAIN ANSWER LOGIC
+# MAIN ANSWER LOGIC (HYBRID AI)
 # ======================================================
 def answer_query(query):
-    # LAN lookup
+    # 1️⃣ LAN lookup
     lan_match = re.search(r"\b\d{3,}\b", query)
     if lan_match:
         lan_id = lan_match.group(0)
@@ -195,10 +208,21 @@ def answer_query(query):
             )
             return answer, tips
 
-    # Legal Q&A
+    # 2️⃣ General knowledge → OpenAI directly
+    if is_general_question(query):
+        return chat(query), ""
+
+    # 3️⃣ Legal / NBFC RAG
     q_vec = embed([query])[0]
     sims = [cosine(q_vec, e) for e in qa_emb]
-    best_answer = qa_df.iloc[int(np.argmax(sims))]["Answer"]
+    best_idx = int(np.argmax(sims))
+    best_score = max(sims)
+
+    # Low confidence → OpenAI fallback
+    if best_score < 0.35:
+        return chat(query), ""
+
+    best_answer = qa_df.iloc[best_idx]["Answer"]
 
     tips = chat(
         f"Give 3 polite NBFC collection call suggestions using this context:\n{best_answer}"
@@ -212,13 +236,13 @@ qa_df, qa_emb = build_embeddings()
 lan_df = load_lan()
 
 # ======================================================
-# INPUT
+# INPUT UI
 # ======================================================
 st.markdown('<div class="card"><h3>💬 Ask a Question</h3></div>', unsafe_allow_html=True)
 
 query = st.text_input(
     "",
-    placeholder="e.g. What is a pre-sale notice? | Enter LAN ID"
+    placeholder="e.g. What is a pre-sale notice? | What is the capital of India? | Enter LAN ID"
 )
 
 if st.button("🚀 Submit"):
@@ -228,5 +252,6 @@ if st.button("🚀 Submit"):
         st.markdown('<div class="card"><h3>🧠 System Response</h3></div>', unsafe_allow_html=True)
         st.success(answer)
 
-        st.markdown('<div class="card"><h3>🎧 Agent Compliance Suggestions</h3></div>', unsafe_allow_html=True)
-        st.warning(tips)
+        if tips:
+            st.markdown('<div class="card"><h3>🎧 Agent Compliance Suggestions</h3></div>', unsafe_allow_html=True)
+            st.warning(tips)
