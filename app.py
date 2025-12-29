@@ -16,28 +16,29 @@ st.set_page_config(
 )
 
 # ======================================================
-# GLOBAL CSS (CLEAN, ENTERPRISE LOOK)
+# GLOBAL CSS (COMPACT & PROFESSIONAL)
 # ======================================================
 st.markdown("""
 <style>
 body { background-color: #0e1117; }
-.block-container { padding-top: 2rem; }
+.block-container { padding-top: 1.5rem; }
 
 .card {
     background-color: #161b22;
-    padding: 20px;
+    padding: 16px 20px;
     border-radius: 14px;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
 }
 
 .small-text {
     color: #9ba3af;
-    font-size: 14.5px;
+    font-size: 14px;
 }
 
 .section-title {
-    font-size: 20px;
+    font-size: 18px;
     font-weight: 600;
+    margin-bottom: 8px;
 }
 
 hr {
@@ -84,7 +85,7 @@ def chat(prompt):
         model="gpt-3.5-turbo",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
-        max_tokens=200
+        max_tokens=180
     )
     return response.choices[0].message["content"].strip()
 
@@ -97,8 +98,8 @@ def embed(texts):
 
 def is_general_question(query: str) -> bool:
     keywords = [
-        "capital", "prime minister", "president", "population",
-        "country", "india", "delhi", "define", "what is", "who is"
+        "capital", "prime minister", "president",
+        "india", "define", "what is", "who is"
     ]
     q = query.lower()
     return any(k in q for k in keywords)
@@ -124,7 +125,9 @@ def load_qa():
 @st.cache_data
 def load_lan():
     df = pd.read_excel(LAN_FILE, dtype=str)
-    df["Notice Sent Date"] = pd.to_datetime(df["Notice Sent Date"], errors="coerce", dayfirst=True)
+    df["Notice Sent Date"] = pd.to_datetime(
+        df["Notice Sent Date"], errors="coerce", dayfirst=True
+    )
     return df
 
 def build_embeddings():
@@ -164,7 +167,9 @@ def answer_query(query):
                 f"LAN {lan_id} belongs to **{r['Business']}** vertical. "
                 f"Current status is **{r['Status']}**, notice sent on **{date_str}**."
             )
-            tips = chat(f"Give 3 polite NBFC collection call suggestions:\n{answer}")
+            tips = chat(
+                f"Give 3 polite, compliant NBFC collection call suggestions:\n{answer}"
+            )
             return answer, tips
 
     # General knowledge routing
@@ -174,71 +179,48 @@ def answer_query(query):
     # Legal RAG
     q_vec = embed([query])[0]
     sims = [cosine(q_vec, e) for e in qa_emb]
-    best_idx = int(np.argmax(sims))
 
     if max(sims) < 0.35:
         return chat(query), ""
 
-    best_answer = qa_df.iloc[best_idx]["Answer"]
-    tips = chat(f"Give 3 compliant call suggestions using this context:\n{best_answer}")
+    best_answer = qa_df.iloc[int(np.argmax(sims))]["Answer"]
+    tips = chat(
+        f"Give 3 compliant agent call suggestions using this context:\n{best_answer}"
+    )
     return best_answer, tips
 
 # ======================================================
-# INFORMATION SECTION (FULL-WIDTH UTILIZATION)
+# COMPACT INFO ROW (NO DUPLICATION)
 # ======================================================
-left_info, right_info = st.columns([2.2, 1.3])
+info_left, info_right = st.columns([2.2, 1])
 
-with left_info:
+with info_left:
     st.markdown("""
     <div class="card">
     <div class="section-title">🔍 What does this assistant do?</div>
     <ul class="small-text">
-        <li>Explains NBFC legal notices (Pre-sale, Auction, Possession, etc.)</li>
-        <li>Identifies recovery status using Loan Account Number (LAN)</li>
-        <li>Guides agents on compliance timelines</li>
-        <li>Answers general knowledge questions when applicable</li>
-        <li>Suggests polite, compliant customer communication</li>
+        <li>Explains NBFC legal notices & compliance steps</li>
+        <li>Checks recovery status using LAN</li>
+        <li>Supports compliant customer communication</li>
     </ul>
-    <p class="small-text">⚠️ This tool assists agents and does not replace legal advice.</p>
+    <p class="small-text">⚠️ For operational guidance only. Not legal advice.</p>
     </div>
     """, unsafe_allow_html=True)
 
-with right_info:
+with info_right:
     st.markdown("""
     <div class="card">
-    <div class="section-title">ℹ️ How to use</div>
+    <div class="section-title">⚡ Quick guide</div>
     <ul class="small-text">
-        <li>Ask NBFC legal or collections questions</li>
-        <li>Enter a LAN ID to check recovery status</li>
-        <li>Ask general questions (capital, definitions)</li>
-    </ul>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div class="card">
-    <div class="section-title">🧪 Example Queries</div>
-    <ul class="small-text">
-        <li>What is a pre-sale notice?</li>
-        <li>What is the capital of India?</li>
-        <li>123456789</li>
-    </ul>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div class="card">
-    <div class="section-title">⚙️ System Capabilities</div>
-    <ul class="small-text">
-        <li>Hybrid AI routing (RAG + LLM fallback)</li>
-        <li>LAN-based rule intelligence</li>
-        <li>Compliance-safe suggestions</li>
+        <li>Ask legal / collections questions</li>
+        <li>Enter LAN ID (e.g. 22222)</li>
+        <li>Ask general questions if needed</li>
     </ul>
     </div>
     """, unsafe_allow_html=True)
 
 # ======================================================
-# QUERY SECTION
+# ASK A QUESTION (VISIBLE IMMEDIATELY)
 # ======================================================
 st.markdown("""
 <div class="card">
@@ -248,12 +230,14 @@ st.markdown("""
 
 query = st.text_input(
     "",
-    placeholder="e.g. What is a pre-sale notice? | What is the capital of India? | Enter LAN ID"
+    placeholder="Type a question or enter LAN ID (e.g. 22222)",
+    label_visibility="collapsed"
 )
 
 if st.button("🚀 Submit"):
     if query.strip():
         answer, tips = answer_query(query)
+
         st.markdown("<div class='card'><b>🧠 System Response</b></div>", unsafe_allow_html=True)
         st.success(answer)
 
@@ -266,7 +250,7 @@ if st.button("🚀 Submit"):
 # ======================================================
 st.markdown("""
 <hr>
-<p style="text-align:center; color:#9ba3af; font-size:14px;">
+<p style="text-align:center; color:#9ba3af; font-size:13px;">
 Created by <b>Mohit Raheja</b> | Applied AI & Decision Intelligence Project
 </p>
 """, unsafe_allow_html=True)
