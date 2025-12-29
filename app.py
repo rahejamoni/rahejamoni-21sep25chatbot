@@ -1,7 +1,6 @@
 import os
 import re
 import io
-import pickle
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -9,189 +8,230 @@ import openai
 from datetime import datetime
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
-from reportlab.lib import colors
 
 # ======================================================
 # PAGE CONFIG
 # ======================================================
 st.set_page_config(
-    page_title="NBFC Intel | Decision Hub",
+    page_title="NBFC Legal Intelligence Hub",
     page_icon="🛡️",
-    layout="wide",
+    layout="wide"
 )
 
 # ======================================================
-# ADVANCED CSS - MIDNIGHT GOLD THEME
+# CSS – PREMIUM APP UI
 # ======================================================
 st.markdown("""
 <style>
-/* Global Styles */
-.stApp {
-    background: linear-gradient(135deg, #040911 0%, #0a192f 100%);
-    color: #e6f1ff;
-}
-
-/* Typography */
-.hero-text {
-    font-size: 3rem;
-    font-weight: 850;
-    background: linear-gradient(90deg, #e1b12c, #fbc531);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    letter-spacing: -1px;
-}
-
-.sub-text {
-    color: #8892b0;
-    font-size: 1.1rem;
-    margin-bottom: 30px;
-    font-weight: 300;
-}
-
-/* Bento Cards */
-.card {
-    background: rgba(17, 34, 64, 0.6);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(100, 255, 218, 0.1);
-    border-radius: 16px;
-    padding: 24px;
-    transition: all 0.3s ease;
-}
-.card:hover {
-    border: 1px solid rgba(225, 177, 44, 0.4);
-    transform: translateY(-2px);
-}
-
-/* Interpretation & Suggestions */
-.answer-card {
-    background: rgba(10, 25, 47, 0.9);
-    border-radius: 16px;
-    padding: 25px;
-    border: 1px solid #112240;
-    box-shadow: 0 10px 30px -15px rgba(2, 12, 27, 0.7);
-}
-
-.agent-header {
-    color: #fbc531;
-    font-size: 1.2rem;
-    font-weight: 700;
-    margin-bottom: 15px;
-    display: flex;
-    align-items: center;
-}
-
-.step-box {
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 10px;
-    padding: 15px;
-    margin-bottom: 12px;
-    border-left: 3px solid #e1b12c;
-}
-
-/* Download Button Styling */
-.stDownloadButton button {
-    background-color: transparent !important;
-    color: #fbc531 !important;
-    border: 1px solid #fbc531 !important;
-    padding: 10px 24px !important;
-    border-radius: 8px !important;
-    transition: 0.3s !important;
-}
-.stDownloadButton button:hover {
-    background-color: rgba(225, 177, 44, 0.1) !important;
-}
+.stApp { background: radial-gradient(circle at top left, #1e293b, #0f172a); color:#f8fafc; }
+.hero { font-size:2.6rem; font-weight:800;
+background:linear-gradient(90deg,#3b82f6,#2dd4bf);
+-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.sub { color:#94a3b8; margin-bottom:20px; }
+.card { background:rgba(255,255,255,0.04); border-radius:16px; padding:18px; }
+.bento { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1);
+border-radius:18px; padding:22px; }
+.answer { background:rgba(15,23,42,0.7); border-left:4px solid #3b82f6;
+border-radius:12px; padding:18px; }
+.agent { background:rgba(45,212,191,0.12); border-left:4px solid #2dd4bf;
+border-radius:12px; padding:16px; }
+.small { font-size:0.85rem; color:#94a3b8; }
 </style>
 """, unsafe_allow_html=True)
 
 # ======================================================
-# HEADER SECTION
+# OPENAI CONFIG (SAFE)
 # ======================================================
-st.markdown('<div class="hero-text">Intelligence Hub</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-text">Strategic Decision-Support for NBFC Collections & Compliance</div>', unsafe_allow_html=True)
-
-# Dashboard Feature Icons
-col_f1, col_f2, col_f3 = st.columns(3)
-with col_f1:
-    st.markdown('<div class="card"><b>⚖️ Regulatory Guard</b><br><span style="font-size:0.8rem; color:#8892b0;">Ensures all actions align with RBI recovery guidelines.</span></div>', unsafe_allow_html=True)
-with col_f2:
-    st.markdown('<div class="card"><b>🔍 Direct Retrieval</b><br><span style="font-size:0.8rem; color:#8892b0;">Real-time LAN status mapping and legal history.</span></div>', unsafe_allow_html=True)
-with col_f3:
-    st.markdown('<div class="card"><b>🗣️ Script Intelligence</b><br><span style="font-size:0.8rem; color:#8892b0;">Dynamic agent scripts for high-conversion negotiations.</span></div>', unsafe_allow_html=True)
-
-st.write(" ")
+openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 # ======================================================
-# CORE LOGIC (MOCK)
+# LOAD DATA
 # ======================================================
-def get_system_answer(q):
-    # Place your actual RAG/Excel logic here
-    return (
-        "Under Section 138 of the NI Act, a demand notice must be served within 30 days of "
-        "cheque dishonor. The borrower then has 15 days to settle the payment before "
-        "a criminal complaint can be filed in the jurisdictional court."
+@st.cache_data
+def load_qa():
+    df = pd.read_excel("legal_staircase.xlsx")
+    df.columns = df.columns.str.lower().str.strip()
+    df = df.rename(columns={"question":"q","answer":"a"})
+    return df[["q","a"]]
+
+@st.cache_data
+def load_lan():
+    return pd.read_excel("lan_data.xlsx", dtype=str)
+
+qa_df = load_qa()
+lan_df = load_lan()
+
+# ======================================================
+# EMBEDDINGS
+# ======================================================
+def embed(texts):
+    res = openai.Embedding.create(
+        model="text-embedding-ada-002",
+        input=texts
     )
+    return np.array([d["embedding"] for d in res["data"]], dtype=np.float32)
 
-def get_agent_suggestions(q):
-    return [
-        "Confirm if the customer received the physical notice via Speed Post tracking.",
-        "Inform the customer that a 'Civil Settlement' is still possible before court filing.",
-        "Document the customer's refusal or promise-to-pay (PTP) in the CRM immediately."
-    ]
+@st.cache_data
+def build_embeddings():
+    return embed(qa_df["q"].tolist())
+
+qa_emb = build_embeddings()
+
+def cosine(a,b):
+    return np.dot(a,b)/(np.linalg.norm(a)*np.linalg.norm(b))
 
 # ======================================================
-# INTERACTION ZONE
+# AGENT ADVICE (MANDATORY)
 # ======================================================
-query = st.chat_input("Enter LAN ID or ask a recovery question...")
+def agent_advice(context):
+    prompt = f"""
+You are a senior NBFC collections manager.
+Give 3 compliant, polite agent actions based ONLY on this context:
 
-if query:
-    answer = get_system_answer(query)
-    agent_steps = get_agent_suggestions(query)
+{context}
+"""
+    res = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role":"user","content":prompt}],
+        temperature=0.2,
+        max_tokens=120
+    )
+    return res.choices[0].message["content"]
 
-    # Main Grid for Results
-    res_col, side_col = st.columns([2, 1])
+# ======================================================
+# ANSWER ENGINE (STRICT RAG)
+# ======================================================
+def answer_query(query):
+    lan = re.search(r"\b\d{3,}\b", query)
 
-    with res_col:
-        st.markdown(f"""
-        <div class="answer-card">
-            <h4 style="color:#ccd6f6; margin-top:0;">💡 Intelligence Output</h4>
-            <p style="color:#8892b0; font-size:1.05rem; line-height:1.7;">{answer}</p>
-        </div>
-        """, unsafe_allow_html=True)
+    if lan:
+        row = lan_df[lan_df["Lan Id"] == lan.group()]
+        if not row.empty:
+            txt = row.iloc[0].to_string()
+            return txt, agent_advice(txt)
 
-    with side_col:
-        st.markdown('<div class="agent-header">⚡ Agent Action Plan</div>', unsafe_allow_html=True)
-        for i, step in enumerate(agent_steps, 1):
-            st.markdown(f"""
-            <div class="step-box">
-                <span style="color:#fbc531; font-weight:bold; margin-right:8px;">0{i}</span>
-                <span style="font-size:0.9rem;">{step}</span>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # PDF Generation & Download
-        def generate_pdf(q, a, s):
-            buffer = io.BytesIO()
-            p = canvas.Canvas(buffer, pagesize=letter)
-            p.setFont("Helvetica-Bold", 16)
-            p.drawString(50, 750, "NBFC LEGAL ADVISORY REPORT")
-            p.setFont("Helvetica", 12)
-            p.drawString(50, 730, f"Query: {q}")
-            p.line(50, 720, 550, 720)
-            p.showPage()
-            p.save()
-            buffer.seek(0)
-            return buffer
+    qv = embed([query])[0]
+    sims = [cosine(qv,e) for e in qa_emb]
+    idx = int(np.argmax(sims))
 
-        pdf = generate_pdf(query, answer, agent_steps)
-        st.download_button("📄 Export to PDF", pdf, file_name="NBFC_Advisor.pdf")
+    if max(sims) < 0.30:
+        return "This query is not covered in the NBFC policy repository.", ""
+
+    ans = qa_df.iloc[idx]["a"]
+    return ans, agent_advice(ans)
+
+# ======================================================
+# PDF
+# ======================================================
+def make_pdf(q,a,adv):
+    buf = io.BytesIO()
+    p = canvas.Canvas(buf, pagesize=letter)
+    p.drawString(40,750,"NBFC Legal Intelligence Summary")
+    p.drawString(40,730,f"Query: {q}")
+    p.drawString(40,700,"Answer:")
+    t = p.beginText(40,680)
+    for l in a.split("\n"): t.textLine(l)
+    p.drawText(t)
+    p.drawString(40,520,"Agent Advice:")
+    p.drawString(40,500,adv[:250])
+    p.save()
+    buf.seek(0)
+    return buf
+
+# ======================================================
+# HEADER
+# ======================================================
+st.markdown("<div class='hero'>Legal Intelligence Hub</div>", unsafe_allow_html=True)
+st.markdown("<div class='sub'>NBFC Legal Staircase • LAN Intelligence • Agent Guidance</div>", unsafe_allow_html=True)
+
+# ======================================================
+# 🔥 THREE BOXES (THIS WAS MISSING)
+# ======================================================
+c1,c2,c3 = st.columns(3)
+
+with c1:
+    st.markdown("""
+    <div class='bento'>
+    ⚖️ <b>Legal Staircase</b><br>
+    <span class='small'>SARFAESI, Section 138, Arbitration steps</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+with c2:
+    st.markdown("""
+    <div class='bento'>
+    🔍 <b>LAN Intelligence</b><br>
+    <span class='small'>Notice history, recovery stage, status</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+with c3:
+    st.markdown("""
+    <div class='bento'>
+    📞 <b>Communication</b><br>
+    <span class='small'>Compliant scripts & agent actions</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ======================================================
+# INTRO + HOW TO USE
+# ======================================================
+i1,i2 = st.columns(2)
+
+with i1:
+    st.markdown("""
+    <div class='card'>
+    <b>What does this assistant do?</b>
+    <ul class='small'>
+    <li>Explains NBFC legal recovery stages</li>
+    <li>Interprets SARFAESI & Section 138</li>
+    <li>Fetches LAN-level status</li>
+    <li>Suggests compliant agent actions</li>
+    </ul>
+    ⚠️ Operational guidance only.
+    </div>
+    """, unsafe_allow_html=True)
+
+with i2:
+    st.markdown("""
+    <div class='card'>
+    <b>How to use</b>
+    <ul class='small'>
+    <li>Ask a legal question</li>
+    <li>Enter LAN ID (e.g. 22222)</li>
+    <li>Review answer & agent advice</li>
+    </ul>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ======================================================
+# CHAT
+# ======================================================
+q = st.chat_input("Ask legal question or enter LAN ID")
+
+if q:
+    ans, adv = answer_query(q)
+
+    a,b = st.columns([2,1])
+    with a:
+        st.markdown("<div class='answer'><b>System Answer</b><br>"+ans+"</div>", unsafe_allow_html=True)
+    with b:
+        if adv:
+            st.markdown("<div class='agent'><b>Agent Advice</b><br>"+adv+"</div>", unsafe_allow_html=True)
+
+    st.download_button(
+        "📄 Download Summary",
+        data=make_pdf(q,ans,adv),
+        file_name="nbfc_summary.pdf",
+        mime="application/pdf"
+    )
 
 # ======================================================
 # FOOTER
 # ======================================================
 st.markdown("""
-<div style="margin-top: 100px; text-align:center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 20px;">
-    <p style="color: #495670; font-size: 0.85rem;">
-        <b>Mohit Raheja</b> | Applied AI Division | Secure Enterprise Intelligence
-    </p>
-</div>
+<hr>
+<p style='text-align:center;color:#64748b;font-size:0.8rem'>
+Designed by <b>Mohit Raheja</b> | Applied AI – NBFC Collections
+</p>
 """, unsafe_allow_html=True)
