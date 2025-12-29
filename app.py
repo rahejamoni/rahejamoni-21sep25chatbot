@@ -16,19 +16,12 @@ st.set_page_config(
 )
 
 # ======================================================
-# CUSTOM CSS (THIS IS THE GAME CHANGER)
+# CUSTOM CSS
 # ======================================================
 st.markdown("""
 <style>
-body {
-    background-color: #0e1117;
-}
-.block-container {
-    padding-top: 2rem;
-}
-h1, h2, h3 {
-    color: #ffffff;
-}
+body { background-color: #0e1117; }
+.block-container { padding-top: 2rem; }
 .card {
     background-color: #161b22;
     padding: 20px;
@@ -39,9 +32,6 @@ h1, h2, h3 {
     color: #9ba3af;
     font-size: 15px;
 }
-hr {
-    border: 1px solid #2a2f3a;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -50,11 +40,11 @@ hr {
 # ======================================================
 st.markdown("""
 <div class="card">
-    <h1>📘 NBFC Legal & Collections Intelligence Assistant</h1>
-    <p class="small-text">
-    AI-powered decision-support system for NBFC collection agents to understand
-    legal processes, loan status, and compliant recovery actions
-    </p>
+<h1>📘 NBFC Legal & Collections Intelligence Assistant</h1>
+<p class="small-text">
+AI-powered decision-support system for NBFC collection agents to understand
+legal processes, loan status, and compliant recovery actions
+</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -70,9 +60,7 @@ st.markdown("""
 <li>Guides agents on compliance timelines</li>
 <li>Suggests polite, compliant customer communication</li>
 </ul>
-<p class="small-text">
-⚠️ This tool assists agents and does not replace legal advice.
-</p>
+<p class="small-text">⚠️ This tool assists agents and does not replace legal advice.</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -80,6 +68,7 @@ st.markdown("""
 # CONFIG
 # ======================================================
 OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY")
+
 QA_FILE = "legal_staircase.xlsx"
 LAN_FILE = "lan_data.xlsx"
 
@@ -87,9 +76,6 @@ EMBED_CACHE = "qa_embeddings.pkl"
 EMBED_MODEL = "text-embedding-3-small"
 CHAT_MODEL = "gpt-4o-mini"
 
-# ======================================================
-# OPENAI CLIENT
-# ======================================================
 if not OPENAI_API_KEY:
     st.error("OPENAI_API_KEY missing in Streamlit Secrets.")
     st.stop()
@@ -97,16 +83,16 @@ if not OPENAI_API_KEY:
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 # ======================================================
-# UTIL FUNCTIONS
+# UTILITIES
 # ======================================================
 def cosine(a, b):
     denom = np.linalg.norm(a) * np.linalg.norm(b)
     return float(np.dot(a, b) / denom) if denom else 0.0
 
-def chat(messages):
+def chat(prompt):
     res = client.chat.completions.create(
         model=CHAT_MODEL,
-        messages=messages,
+        messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
         max_tokens=200
     )
@@ -117,32 +103,68 @@ def embed(texts):
     return [d.embedding for d in res.data]
 
 # ======================================================
-# LOAD DATA
+# LOAD LEGAL QA (SAFE VERSION)
 # ======================================================
 @st.cache_data
 def load_qa():
     df = pd.read_excel(QA_FILE)
-    df.columns = df.columns.str.strip()
+
+    # Normalize column names
+    df.columns = df.columns.str.strip().str.lower()
+
+    # Flexible mapping
+    rename_map = {
+        "question": "Question",
+        "questions": "Question",
+        "answer": "Answer",
+        "answers": "Answer",
+        "business": "Business",
+        "vertical": "Business"
+    }
+
+    df = df.rename(columns=rename_map)
+
+    required = {"Question", "Answer", "Business"}
+    missing = required - set(df.columns)
+
+    if missing:
+        st.error(f"Missing required columns in legal_staircase.xlsx: {missing}")
+        st.stop()
+
     df["id"] = range(len(df))
     return df[["id", "Question", "Answer", "Business"]]
 
+# ======================================================
+# LOAD LAN DATA (SAFE VERSION)
+# ======================================================
 @st.cache_data
 def load_lan():
-    df = pd.read_excel(LAN_FILE, dtype={"Lan Id": str})
+    df = pd.read_excel(LAN_FILE, dtype=str)
     df.columns = df.columns.str.strip()
-    df["Lan Id"] = df["Lan Id"].astype(str)
-    df["Notice Sent Date"] = pd.to_datetime(df["Notice Sent Date"], errors="coerce")
+
+    required = {"Lan Id", "Status", "Business", "Notice Sent Date"}
+    missing = required - set(df.columns)
+
+    if missing:
+        st.error(f"Missing required columns in lan_data.xlsx: {missing}")
+        st.stop()
+
+    df["Lan Id"] = df["Lan Id"].astype(str).str.strip()
+    df["Notice Sent Date"] = pd.to_datetime(
+        df["Notice Sent Date"], errors="coerce", dayfirst=True
+    )
     return df
 
 # ======================================================
-# EMBEDDINGS
+# BUILD EMBEDDINGS
 # ======================================================
 def build_embeddings():
     qa_df = load_qa()
+
     if os.path.exists(EMBED_CACHE):
         with open(EMBED_CACHE, "rb") as f:
             saved = pickle.load(f)
-        if saved["len"] == len(qa_df):
+        if saved.get("len") == len(qa_df):
             return qa_df, saved["emb"]
 
     corpus = [q + " || " + a for q, a in zip(qa_df["Question"], qa_df["Answer"])]
@@ -154,41 +176,39 @@ def build_embeddings():
     return qa_df, emb
 
 # ======================================================
-# ANSWER LOGIC
+# MAIN ANSWER LOGIC
 # ======================================================
 def answer_query(query):
+    # Check LAN
     lan_match = re.search(r"\b\d{3,}\b", query)
     if lan_match:
         lan_id = lan_match.group(0)
         row = lan_df[lan_df["Lan Id"] == lan_id]
+
         if not row.empty:
             r = row.iloc[0]
             date = r["Notice Sent Date"]
-            d = date.strftime("%d-%m-%Y") if pd.notna(date) else "N/A"
+            date_str = date.strftime("%d-%m-%Y") if pd.notna(date) else "N/A"
 
             answer = (
                 f"LAN {lan_id} belongs to **{r['Business']}** vertical. "
-                f"Current status is **{r['Status']}**, notice sent on **{d}**."
+                f"Current status is **{r['Status']}**, notice sent on **{date_str}**."
             )
 
-            tips = chat([{
-                "role": "user",
-                "content": f"Give 3 polite, compliant call suggestions for this case: {answer}"
-            }])
-
+            tips = chat(
+                f"Give 3 polite, compliant NBFC collection call suggestions for this case:\n{answer}"
+            )
             return answer, tips
 
     # Legal question
     q_vec = embed([query])[0]
     sims = [cosine(q_vec, e) for e in qa_emb]
-    best = qa_df.iloc[int(np.argmax(sims))]["Answer"]
+    best_answer = qa_df.iloc[int(np.argmax(sims))]["Answer"]
 
-    tips = chat([{
-        "role": "user",
-        "content": f"Give 3 polite NBFC collection call suggestions using this context: {best}"
-    }])
-
-    return best, tips
+    tips = chat(
+        f"Give 3 polite NBFC collection call suggestions using this context:\n{best_answer}"
+    )
+    return best_answer, tips
 
 # ======================================================
 # LOAD DATA
@@ -197,35 +217,21 @@ qa_df, qa_emb = build_embeddings()
 lan_df = load_lan()
 
 # ======================================================
-# QUERY INPUT
+# INPUT
 # ======================================================
-st.markdown("""
-<div class="card">
-<h3>💬 Ask a Question</h3>
-</div>
-""", unsafe_allow_html=True)
+st.markdown('<div class="card"><h3>💬 Ask a Question</h3></div>', unsafe_allow_html=True)
 
 query = st.text_input(
     "",
-    placeholder="e.g. What is a pre-sale notice?  |  Enter LAN ID"
+    placeholder="e.g. What is a pre-sale notice? | Enter LAN ID"
 )
 
 if st.button("🚀 Submit"):
     if query.strip():
         answer, tips = answer_query(query)
 
-        st.markdown("""
-        <div class="card">
-        <h3>🧠 System Response</h3>
-        </div>
-        """, unsafe_allow_html=True)
-
+        st.markdown('<div class="card"><h3>🧠 System Response</h3></div>', unsafe_allow_html=True)
         st.success(answer)
 
-        st.markdown("""
-        <div class="card">
-        <h3>🎧 Agent Compliance Suggestions</h3>
-        </div>
-        """, unsafe_allow_html=True)
-
+        st.markdown('<div class="card"><h3>🎧 Agent Compliance Suggestions</h3></div>', unsafe_allow_html=True)
         st.warning(tips)
