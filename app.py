@@ -2,6 +2,7 @@ import os
 import re
 import pickle
 import io
+import textwrap # Added for better PDF text wrapping
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -11,232 +12,117 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 
-# ======================================================
-# PAGE CONFIG
-# ======================================================
-st.set_page_config(
-    page_title="NBFC Legal Intelligence Hub",
-    page_icon="🛡️",
-    layout="wide",
-)
+# ... [KEEP YOUR EXISTING PAGE CONFIG AND CSS] ...
 
 # ======================================================
-# CUSTOM CSS (ENTERPRISE UI)
-# ======================================================
-st.markdown("""
-<style>
-.stApp {
-    background: radial-gradient(circle at top left, #1e293b, #0f172a);
-    color: #f8fafc;
-}
-section[data-testid="stSidebar"] {
-    background-color: rgba(15, 23, 42, 0.9);
-    border-right: 1px solid rgba(255,255,255,0.1);
-}
-.hero-text {
-    font-size: 2.6rem;
-    font-weight: 800;
-    background: linear-gradient(90deg, #3b82f6, #2dd4bf);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
-.sub-text {
-    color: #94a3b8;
-    font-size: 1.1rem;
-}
-.bento-card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 16px;
-    padding: 22px;
-}
-.response-card {
-    background: rgba(15,23,42,0.7);
-    border-left: 4px solid #3b82f6;
-    padding: 20px;
-    border-radius: 12px;
-}
-.agent-card {
-    background: rgba(45,212,191,0.08);
-    border-left: 4px solid #2dd4bf;
-    padding: 18px;
-    border-radius: 12px;
-}
-.small-text {
-    color:#94a3b8;
-    font-size:14px;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# ======================================================
-# OPENAI CONFIG (ASSUMES SECRET SET)
-# ======================================================
-openai.api_key = st.secrets["OPENAI_API_KEY"]
-
-# ======================================================
-# PDF GENERATOR
+# IMPROVED PDF GENERATOR (HANDLES LONG ANSWERS)
 # ======================================================
 def generate_pdf(query, answer, tips):
     buffer = io.BytesIO()
     p = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
+    margin = 50
+    wrap_width = 95 # Character limit per line
 
-    p.setFont("Helvetica-Bold", 16)
-    p.drawString(50, height - 50, "NBFC LEGAL INTELLIGENCE REPORT")
-
+    # 1. Header & Branding
+    p.setFillColor(colors.HexColor("#0f172a"))
+    p.rect(0, height - 80, width, 80, fill=1)
+    p.setStrokeColor(colors.white)
+    
+    p.setFont("Helvetica-Bold", 18)
+    p.setFillColor(colors.white)
+    p.drawString(margin, height - 45, "NBFC LEGAL INTELLIGENCE REPORT")
+    
     p.setFont("Helvetica", 10)
-    p.drawString(50, height - 70, f"Generated on: {datetime.now()}")
+    p.drawString(margin, height - 65, f"Issued on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
+    # 2. Main Content Setup
+    curr_y = height - 120
+    p.setFillColor(colors.black)
+    
+    # Section: User Query
     p.setFont("Helvetica-Bold", 12)
-    p.drawString(50, height - 110, "Query:")
+    p.drawString(margin, curr_y, "USER QUERY:")
+    curr_y -= 20
     p.setFont("Helvetica", 11)
-    p.drawString(50, height - 130, query)
+    p.drawString(margin, curr_y, f"\"{query}\"")
+    curr_y -= 40
 
+    # Section: System Interpretation (Wrapped Text)
     p.setFont("Helvetica-Bold", 12)
-    p.drawString(50, height - 170, "System Interpretation:")
-    text = p.beginText(50, height - 190)
-    text.setFont("Helvetica", 11)
-    for line in answer.split("\n"):
-        text.textLine(line)
-    p.drawText(text)
+    p.drawString(margin, curr_y, "LEGAL INTERPRETATION:")
+    curr_y -= 20
+    
+    text_obj = p.beginText(margin, curr_y)
+    text_obj.setFont("Helvetica", 11)
+    text_obj.setLeading(14) # Line spacing
+    
+    # Wrapping logic for long AI answers
+    wrapped_answer = textwrap.wrap(answer, width=wrap_width)
+    for line in wrapped_answer:
+        text_obj.textLine(line)
+    p.drawText(text_obj)
+    
+    # Adjust Y position based on how many lines were drawn
+    curr_y = text_obj.getY() - 40
 
+    # Section: Agent Guidance
     p.setFont("Helvetica-Bold", 12)
-    p.drawString(50, text.getY() - 30, "Agent Guidance:")
-    p.setFont("Helvetica", 11)
-    p.drawString(50, text.getY() - 50, tips)
+    p.drawString(margin, curr_y, "STRATEGIC AGENT GUIDANCE:")
+    curr_y -= 20
+    
+    tips_obj = p.beginText(margin, curr_y)
+    tips_obj.setFont("Helvetica-Oblique", 11)
+    tips_obj.setLeading(14)
+    
+    wrapped_tips = textwrap.wrap(tips_obj, width=wrap_width) # Wrap tips as well
+    for line in wrapped_tips:
+        tips_obj.textLine(line)
+    p.drawText(tips_obj)
+
+    # 3. Footer
+    p.setFont("Helvetica-Oblique", 9)
+    p.setFillColor(colors.grey)
+    p.drawCentredString(width/2, 30, "Confidential - For Internal Use Only - Created by Mohit Raheja")
 
     p.showPage()
     p.save()
     buffer.seek(0)
     return buffer
 
-# ======================================================
-# SIDEBAR (INTEL CENTER)
-# ======================================================
-with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/1055/1055644.png", width=70)
-    st.markdown("## Intel Center")
-    st.markdown("---")
-
-    st.markdown("### 🔍 What does this assistant do?")
-    st.markdown("""
-- Explains NBFC legal notices and recovery stages  
-- Interprets SARFAESI, Section 138 & arbitration steps  
-- Fetches LAN-level recovery status  
-- Suggests compliant customer communication  
-
-⚠️ *For operational guidance only. Not legal advice.*
-""")
-
-    st.markdown("---")
-
-    st.markdown("### ℹ️ How to use")
-    st.markdown("""
-- Ask a legal or collections question  
-- Enter a LAN ID (e.g. 22222)  
-- Review system response and agent suggestions  
-""")
-
-    st.markdown("---")
-    st.caption("Designed by **Mohit Raheja**")
+# ... [KEEP YOUR SIDEBAR AND BENTO CARDS] ...
 
 # ======================================================
-# MAIN HEADER
-# ======================================================
-st.markdown('<div class="hero-text">Legal Intelligence Hub</div>', unsafe_allow_html=True)
-st.markdown('<p class="sub-text">AI-powered decision support for NBFC collections & legal compliance</p>', unsafe_allow_html=True)
-
-# ======================================================
-# THREE CORE MODULES
-# ======================================================
-c1, c2, c3 = st.columns(3)
-
-with c1:
-    st.markdown("""
-    <div class="bento-card">
-    <h4>⚖️ Legal Staircase</h4>
-    <p class="small-text">
-    Step-by-step interpretation of SARFAESI, Section 138, Demand, Pre-Sale & Arbitration.
-    </p>
-    </div>
-    """, unsafe_allow_html=True)
-
-with c2:
-    st.markdown("""
-    <div class="bento-card">
-    <h4>🔍 LAN Intelligence</h4>
-    <p class="small-text">
-    Fetch recovery status, notice stage and action readiness using LAN ID.
-    </p>
-    </div>
-    """, unsafe_allow_html=True)
-
-with c3:
-    st.markdown("""
-    <div class="bento-card">
-    <h4>📞 Communication</h4>
-    <p class="small-text">
-    Polite, compliant and audit-safe calling guidance for agents.
-    </p>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-# ======================================================
-# QUERY INPUT
+# QUERY LOGIC & OUTPUT
 # ======================================================
 query = st.chat_input("Ask a legal question or enter LAN ID...")
 
 if query:
     with st.spinner("Analyzing through Legal Intelligence Engine..."):
-        # ---- MOCK LOGIC (replace with your real logic) ----
-        answer_text = (
-            "A pre-sale notice is a mandatory legal communication issued before auction "
-            "informing the borrower of outstanding dues and proposed sale date."
-        )
-
-        agent_tips = (
-            "1. Confirm receipt of the notice.\n"
-            "2. Inform borrower of limited time before auction.\n"
-            "3. Encourage immediate payment or settlement discussion."
-        )
+        # Placeholder for your real logic (RAG / LAN lookup)
+        answer_text = "The SARFAESI Act, 2002 allows banks and other financial institutions to auction residential or commercial properties (of defaulters) to recover loans. Under this Act, the lender is not required to approach a court of law to take possession of the secured asset, provided the loan is classified as a Non-Performing Asset (NPA)."
+        
+        agent_tips = "Check the NPA classification date. Ensure that the 60-day demand notice has been properly acknowledged by the borrower before initiating physical possession steps."
 
     col_ans, col_tip = st.columns([2, 1])
 
     with col_ans:
         st.markdown("### 🧠 System Response")
-        st.markdown(f"""
-        <div class="response-card">
-        {answer_text}
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<div class="response-card">{answer_text}</div>', unsafe_allow_html=True)
 
     with col_tip:
         st.markdown("### 🎧 Agent Suggestions")
-        st.markdown(f"""
-        <div class="agent-card">
-        {agent_tips}
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<div class="agent-card">{agent_tips}</div>', unsafe_allow_html=True)
 
-    # PDF DOWNLOAD
-    pdf = generate_pdf(query, answer_text, agent_tips)
+    # DYNAMIC PDF EXPORT
+    st.markdown("---")
+    # We pass the real answer_text and agent_tips variables to the PDF generator
+    pdf_data = generate_pdf(query, answer_text, agent_tips)
+    
     st.download_button(
         label="📄 Download Legal Summary (PDF)",
-        data=pdf,
-        file_name="NBFC_Legal_Summary.pdf",
+        data=pdf_data,
+        file_name=f"Legal_Summary_{datetime.now().strftime('%d%m%Y')}.pdf",
         mime="application/pdf",
+        use_container_width=True # Advanced UI: Makes the button full width
     )
-
-# ======================================================
-# FOOTER
-# ======================================================
-st.markdown("""
-<hr>
-<p style="text-align:center; color:#64748b; font-size:13px;">
-NBFC Legal Intelligence Hub | Applied AI Project<br>
-Created by <b>Mohit Raheja</b>
-</p>
-""", unsafe_allow_html=True)
