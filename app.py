@@ -4,7 +4,9 @@ import pickle
 import numpy as np
 import pandas as pd
 import streamlit as st
-from openai import OpenAI
+#from openai import OpenAI
+import openai
+
 
 # ======================================================
 # PAGE CONFIG
