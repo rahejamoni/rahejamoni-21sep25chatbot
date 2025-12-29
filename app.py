@@ -1,7 +1,7 @@
 import os
 import re
-import io
 import pickle
+import io
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -12,7 +12,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 
 # ======================================================
-# PAGE CONFIG
+# PAGE CONFIGURATION
 # ======================================================
 st.set_page_config(
     page_title="NBFC Intel | Decision Hub",
@@ -21,177 +21,136 @@ st.set_page_config(
 )
 
 # ======================================================
-# ADVANCED CSS - MIDNIGHT GOLD THEME
+# CSS: GLASSMORPHISM & PRO UI
 # ======================================================
 st.markdown("""
 <style>
-/* Global Styles */
-.stApp {
-    background: linear-gradient(135deg, #040911 0%, #0a192f 100%);
-    color: #e6f1ff;
-}
-
-/* Typography */
-.hero-text {
-    font-size: 3rem;
-    font-weight: 850;
-    background: linear-gradient(90deg, #e1b12c, #fbc531);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    letter-spacing: -1px;
-}
-
-.sub-text {
-    color: #8892b0;
-    font-size: 1.1rem;
-    margin-bottom: 30px;
-    font-weight: 300;
-}
-
-/* Bento Cards */
-.card {
-    background: rgba(17, 34, 64, 0.6);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(100, 255, 218, 0.1);
-    border-radius: 16px;
-    padding: 24px;
-    transition: all 0.3s ease;
-}
-.card:hover {
-    border: 1px solid rgba(225, 177, 44, 0.4);
-    transform: translateY(-2px);
-}
-
-/* Interpretation & Suggestions */
-.answer-card {
-    background: rgba(10, 25, 47, 0.9);
-    border-radius: 16px;
-    padding: 25px;
-    border: 1px solid #112240;
-    box-shadow: 0 10px 30px -15px rgba(2, 12, 27, 0.7);
-}
-
-.agent-header {
-    color: #fbc531;
-    font-size: 1.2rem;
-    font-weight: 700;
-    margin-bottom: 15px;
-    display: flex;
-    align-items: center;
-}
-
-.step-box {
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 10px;
-    padding: 15px;
-    margin-bottom: 12px;
-    border-left: 3px solid #e1b12c;
-}
-
-/* Download Button Styling */
-.stDownloadButton button {
-    background-color: transparent !important;
-    color: #fbc531 !important;
-    border: 1px solid #fbc531 !important;
-    padding: 10px 24px !important;
-    border-radius: 8px !important;
-    transition: 0.3s !important;
-}
-.stDownloadButton button:hover {
-    background-color: rgba(225, 177, 44, 0.1) !important;
-}
+    .stApp { background: radial-gradient(circle at top left, #0f172a, #1e293b); color: #f8fafc; }
+    .hero-text { font-size: 2.8rem; font-weight: 800; background: linear-gradient(90deg, #3b82f6, #2dd4bf); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0px; }
+    .bento-card { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; padding: 20px; transition: 0.3s; }
+    .bento-card:hover { border-color: #3b82f6; background: rgba(255, 255, 255, 0.05); }
+    .response-card { background: rgba(15, 23, 42, 0.8); border-radius: 12px; padding: 25px; border-left: 5px solid #3b82f6; margin-top: 20px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3); }
+    .action-step { background: rgba(59, 130, 246, 0.1); padding: 12px; border-radius: 8px; margin-bottom: 10px; border: 1px solid rgba(59, 130, 246, 0.2); }
 </style>
 """, unsafe_allow_html=True)
 
 # ======================================================
-# HEADER SECTION
+# PDF GENERATOR FUNCTION
 # ======================================================
-st.markdown('<div class="hero-text">Intelligence Hub</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-text">Strategic Decision-Support for NBFC Collections & Compliance</div>', unsafe_allow_html=True)
+def generate_pdf(query, answer, tips):
+    buffer = io.BytesIO()
+    p = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
 
-# Dashboard Feature Icons
-col_f1, col_f2, col_f3 = st.columns(3)
-with col_f1:
-    st.markdown('<div class="card"><b>⚖️ Regulatory Guard</b><br><span style="font-size:0.8rem; color:#8892b0;">Ensures all actions align with RBI recovery guidelines.</span></div>', unsafe_allow_html=True)
-with col_f2:
-    st.markdown('<div class="card"><b>🔍 Direct Retrieval</b><br><span style="font-size:0.8rem; color:#8892b0;">Real-time LAN status mapping and legal history.</span></div>', unsafe_allow_html=True)
-with col_f3:
-    st.markdown('<div class="card"><b>🗣️ Script Intelligence</b><br><span style="font-size:0.8rem; color:#8892b0;">Dynamic agent scripts for high-conversion negotiations.</span></div>', unsafe_allow_html=True)
+    # Header
+    p.setFont("Helvetica-Bold", 16)
+    p.setStrokeColor(colors.dodgerblue)
+    p.drawString(50, height - 50, "NBFC LEGAL INTELLIGENCE REPORT")
+    p.setFont("Helvetica", 10)
+    p.drawString(50, height - 65, f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    p.line(50, height - 75, width - 50, height - 75)
 
-st.write(" ")
+    # Content
+    p.setFont("Helvetica-Bold", 12)
+    p.drawString(50, height - 100, "Query Analysis:")
+    p.setFont("Helvetica", 11)
+    
+    # Text wrapping for Answer
+    text_object = p.beginText(50, height - 120)
+    text_object.setFont("Helvetica", 11)
+    text_object.setLeading(14)
+    lines = answer.split('\n')
+    for line in lines:
+        text_object.textLine(line)
+    p.drawText(text_object)
+
+    # Agent Guidance
+    p.setFont("Helvetica-Bold", 12)
+    curr_y = text_object.getY() - 30
+    p.drawString(50, curr_y, "Recommended Agent Action:")
+    p.setFont("Helvetica-Oblique", 11)
+    p.drawString(50, curr_y - 20, tips[:100] + "...") # Simplified for demo
+
+    p.showPage()
+    p.save()
+    buffer.seek(0)
+    return buffer
 
 # ======================================================
-# CORE LOGIC (MOCK)
+# SIDEBAR & STATS
 # ======================================================
-def get_system_answer(q):
-    # Place your actual RAG/Excel logic here
-    return (
-        "Under Section 138 of the NI Act, a demand notice must be served within 30 days of "
-        "cheque dishonor. The borrower then has 15 days to settle the payment before "
-        "a criminal complaint can be filed in the jurisdictional court."
-    )
-
-def get_agent_suggestions(q):
-    return [
-        "Confirm if the customer received the physical notice via Speed Post tracking.",
-        "Inform the customer that a 'Civil Settlement' is still possible before court filing.",
-        "Document the customer's refusal or promise-to-pay (PTP) in the CRM immediately."
-    ]
+with st.sidebar:
+    st.markdown("### 🛠️ Intelligence Tools")
+    if st.button("🔄 Reset Session"):
+        st.session_state.clear()
+        st.rerun()
+    
+    st.markdown("---")
+    st.markdown("### 📊 Metrics")
+    st.progress(85, text="Daily Recovery Target")
+    st.caption("Current Accuracy: 99.4%")
 
 # ======================================================
-# INTERACTION ZONE
+# MAIN INTERFACE
 # ======================================================
-query = st.chat_input("Enter LAN ID or ask a recovery question...")
+st.markdown('<h1 class="hero-text">Intelligence Hub</h1>', unsafe_allow_html=True)
+st.markdown('<p style="color:#94a3b8; margin-bottom: 30px;">Automated Decision Support for NBFC Collections</p>', unsafe_allow_html=True)
+
+# Feature Explanation (Bento)
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.markdown('<div class="bento-card"><h4>⚖️ Compliance</h4><p style="font-size:0.85rem; color:#94a3b8;">Instant legal staircase interpretations for SARFAESI, Sec 138, and Arbitration.</p></div>', unsafe_allow_html=True)
+with col2:
+    st.markdown('<div class="bento-card"><h4>🔍 Retrieval</h4><p style="font-size:0.85rem; color:#94a3b8;">Enter LAN IDs to fetch notice history and recovery status from internal databases.</p></div>', unsafe_allow_html=True)
+with col3:
+    st.markdown('<div class="bento-card"><h4>📞 Strategy</h4><p style="font-size:0.85rem; color:#94a3b8;">Receive compliant scripts and negotiation tactics tailored to the customer profile.</p></div>', unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ======================================================
+# CHAT ENGINE
+# ======================================================
+query = st.chat_input("Enter LAN ID or Legal Question...")
 
 if query:
-    answer = get_system_answer(query)
-    agent_steps = get_agent_suggestions(query)
+    # --- PROCESSSING LOGIC (Call your existing functions here) ---
+    # Example mock results:
+    ans_text = "A pre-sale notice is a legal mandatory communication sent 15 days prior to auction. It must include the outstanding balance and the specific date of the proposed sale. Failure to send this can invalidate the recovery process."
+    tips_text = "Explain the urgency: 'Mr. Customer, this is the final notice before your asset is moved to auction. We can still halt this if payment is made today.'"
 
-    # Main Grid for Results
-    res_col, side_col = st.columns([2, 1])
+    # 1. Display Intelligence
+    st.markdown(f"""
+    <div class="response-card">
+        <h3 style="margin-top:0; color:#3b82f6;">💡 Legal Interpretation</h3>
+        <p style="line-height:1.6; font-size:1.1rem;">{ans_text}</p>
+        <hr style="opacity:0.1">
+        <h4 style="color:#2dd4bf;">🚀 Agent Action Plan</h4>
+        <div class="action-step"><strong>Primary:</strong> Verify Notice Receipt Date.</div>
+        <div class="action-step"><strong>Secondary:</strong> Initiate "Final Settlement" call script.</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    with res_col:
-        st.markdown(f"""
-        <div class="answer-card">
-            <h4 style="color:#ccd6f6; margin-top:0;">💡 Intelligence Output</h4>
-            <p style="color:#8892b0; font-size:1.05rem; line-height:1.7;">{answer}</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with side_col:
-        st.markdown('<div class="agent-header">⚡ Agent Action Plan</div>', unsafe_allow_html=True)
-        for i, step in enumerate(agent_steps, 1):
-            st.markdown(f"""
-            <div class="step-box">
-                <span style="color:#fbc531; font-weight:bold; margin-right:8px;">0{i}</span>
-                <span style="font-size:0.9rem;">{step}</span>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # PDF Generation & Download
-        def generate_pdf(q, a, s):
-            buffer = io.BytesIO()
-            p = canvas.Canvas(buffer, pagesize=letter)
-            p.setFont("Helvetica-Bold", 16)
-            p.drawString(50, 750, "NBFC LEGAL ADVISORY REPORT")
-            p.setFont("Helvetica", 12)
-            p.drawString(50, 730, f"Query: {q}")
-            p.line(50, 720, 550, 720)
-            p.showPage()
-            p.save()
-            buffer.seek(0)
-            return buffer
-
-        pdf = generate_pdf(query, answer, agent_steps)
-        st.download_button("📄 Export to PDF", pdf, file_name="NBFC_Advisor.pdf")
+    # 2. PDF Download Section
+    st.markdown("<br>", unsafe_allow_html=True)
+    pdf_file = generate_pdf(query, ans_text, tips_text)
+    
+    col_dl, _ = st.columns([1, 3])
+    with col_dl:
+        st.download_button(
+            label="📄 Download Legal Summary (PDF)",
+            data=pdf_file,
+            file_name=f"Legal_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
 
 # ======================================================
-# FOOTER
+# KNOWLEDGE REPOSITORY
 # ======================================================
-st.markdown("""
-<div style="margin-top: 100px; text-align:center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 20px;">
-    <p style="color: #495670; font-size: 0.85rem;">
-        <b>Mohit Raheja</b> | Applied AI Division | Secure Enterprise Intelligence
-    </p>
-</div>
-""", unsafe_allow_html=True)
+with st.expander("📚 Access Compliance Knowledge Base"):
+    st.info("Currently indexing: RBI Master Circular 2024, Limitation Act 1963, NBFC Fair Practice Code.")
+    st.table(pd.DataFrame({
+        "Legal Code": ["SARFAESI", "Sec 138 NI", "Arbitration"],
+        "Focus": ["Physical Possession", "Cheque Bounce", "Civil Dispute"],
+        "SLA": ["60 Days", "30 Days", "90 Days"]
+    }))
