@@ -16,7 +16,7 @@ st.set_page_config(
 )
 
 # ======================================================
-# GLOBAL CSS (COMPACT & PROFESSIONAL)
+# GLOBAL CSS (COMPACT, CLEAN UI)
 # ======================================================
 st.markdown("""
 <style>
@@ -25,9 +25,9 @@ body { background-color: #0e1117; }
 
 .card {
     background-color: #161b22;
-    padding: 16px 20px;
-    border-radius: 14px;
-    margin-bottom: 16px;
+    padding: 16px;
+    border-radius: 12px;
+    margin-bottom: 14px;
 }
 
 .small-text {
@@ -38,7 +38,7 @@ body { background-color: #0e1117; }
 .section-title {
     font-size: 18px;
     font-weight: 600;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
 }
 
 hr {
@@ -52,7 +52,7 @@ hr {
 # ======================================================
 st.markdown("""
 <div class="card">
-    <h1>📘 NBFC Legal & Collections Intelligence Assistant</h1>
+    <h2>📘 NBFC Legal & Collections Intelligence Assistant</h2>
     <p class="small-text">
     AI-powered decision-support system for NBFC collection agents to understand
     legal processes, loan status, and compliant recovery actions
@@ -98,8 +98,8 @@ def embed(texts):
 
 def is_general_question(query: str) -> bool:
     keywords = [
-        "capital", "prime minister", "president",
-        "india", "define", "what is", "who is"
+        "capital", "prime minister", "president", "population",
+        "india", "delhi", "define", "what is", "who is"
     ]
     q = query.lower()
     return any(k in q for k in keywords)
@@ -143,8 +143,10 @@ def build_embeddings():
 
     corpus = [q + " || " + a for q, a in zip(qa_df["Question"], qa_df["Answer"])]
     emb = np.array(embed(corpus), dtype=np.float32)
+
     with open(EMBED_CACHE, "wb") as f:
         pickle.dump({"emb": emb, "len": len(qa_df)}, f)
+
     return qa_df, emb
 
 qa_df, qa_emb = build_embeddings()
@@ -163,13 +165,12 @@ def answer_query(query):
             r = row.iloc[0]
             date = r["Notice Sent Date"]
             date_str = date.strftime("%d-%m-%Y") if pd.notna(date) else "N/A"
+
             answer = (
                 f"LAN {lan_id} belongs to **{r['Business']}** vertical. "
                 f"Current status is **{r['Status']}**, notice sent on **{date_str}**."
             )
-            tips = chat(
-                f"Give 3 polite, compliant NBFC collection call suggestions:\n{answer}"
-            )
+            tips = chat(f"Give 3 polite NBFC collection call suggestions:\n{answer}")
             return answer, tips
 
     # General knowledge routing
@@ -179,20 +180,19 @@ def answer_query(query):
     # Legal RAG
     q_vec = embed([query])[0]
     sims = [cosine(q_vec, e) for e in qa_emb]
+    best_idx = int(np.argmax(sims))
 
     if max(sims) < 0.35:
         return chat(query), ""
 
-    best_answer = qa_df.iloc[int(np.argmax(sims))]["Answer"]
-    tips = chat(
-        f"Give 3 compliant agent call suggestions using this context:\n{best_answer}"
-    )
+    best_answer = qa_df.iloc[best_idx]["Answer"]
+    tips = chat(f"Give 3 compliant call suggestions using this context:\n{best_answer}")
     return best_answer, tips
 
 # ======================================================
 # COMPACT INFO ROW (NO DUPLICATION)
 # ======================================================
-info_left, info_right = st.columns([2.2, 1])
+info_left, info_right = st.columns([2.2, 1.3])
 
 with info_left:
     st.markdown("""
@@ -200,8 +200,8 @@ with info_left:
     <div class="section-title">🔍 What does this assistant do?</div>
     <ul class="small-text">
         <li>Explains NBFC legal notices & compliance steps</li>
-        <li>Checks recovery status using LAN</li>
-        <li>Supports compliant customer communication</li>
+        <li>Identifies recovery status using LAN</li>
+        <li>Guides compliant customer communication</li>
     </ul>
     <p class="small-text">⚠️ For operational guidance only. Not legal advice.</p>
     </div>
@@ -220,7 +220,7 @@ with info_right:
     """, unsafe_allow_html=True)
 
 # ======================================================
-# ASK A QUESTION (VISIBLE IMMEDIATELY)
+# ASK A QUESTION (VISIBLE WITHOUT SCROLL)
 # ======================================================
 st.markdown("""
 <div class="card">
